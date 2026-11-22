@@ -1,0 +1,20 @@
+{
+  "name": "@talesreach/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Talesreach game client (Phaser 4 + Vite + TypeScript)",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "@colyseus/sdk": "^0.18.10",
+    "@talesreach/shared": "0.1.0",
+    "phaser": "^4.2.1"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8"
+  }
+}
