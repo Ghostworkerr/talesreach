@@ -33,6 +33,7 @@ const BREATH_DIP_MS = 450;
 const BODY_Y = -4;
 
 const DUST_COLOUR = 0xd9caa9;
+const SPLASH_COLOUR = 0xbfe0f5;
 
 export type Pose = Record<PieceName, readonly [number, number]>;
 
@@ -83,6 +84,8 @@ export class CharacterView {
   private readonly pieces = {} as Record<PieceName, Phaser.GameObjects.Image>;
   private readonly shadow: Phaser.GameObjects.Ellipse;
 
+  /** Wet ground (rain): footsteps splash instead of kicking up dust. */
+  wet = false;
   private phase = 0;
   private stillFor = 0;
   private idleClock = Math.random() * BREATH_EVERY_MS;
@@ -175,9 +178,14 @@ export class CharacterView {
   /** A small puff of dust at the foot that just landed (offset in art pixels from centre). */
   private dust(footOffsetX: number) {
     const facing = this.flipper.scaleX;
-    const puff = this.scene.add
-      .circle(this.root.x + footOffsetX * facing, this.root.y + 4, 1.5, DUST_COLOUR, 0.7)
-      .setDepth(this.root.depth - 0.5);
+    const x = this.root.x + footOffsetX * facing;
+    if (this.wet) {
+      // A little splash: a ring spreading on the wet ground.
+      const ring = this.scene.add.ellipse(x, this.root.y + 4, 3, 1.5).setStrokeStyle(0.75, SPLASH_COLOUR, 0.9).setDepth(this.root.depth - 0.5);
+      this.scene.tweens.add({ targets: ring, scaleX: 2.6, scaleY: 2.2, alpha: 0, duration: 380, ease: "Quad.easeOut", onComplete: () => ring.destroy() });
+      return;
+    }
+    const puff = this.scene.add.circle(x, this.root.y + 4, 1.5, DUST_COLOUR, 0.7).setDepth(this.root.depth - 0.5);
     this.scene.tweens.add({
       targets: puff,
       y: puff.y - 2,

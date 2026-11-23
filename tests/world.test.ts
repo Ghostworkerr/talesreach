@@ -180,3 +180,53 @@ describe("interest management", () => {
     await b.room.leave();
   }, 40_000);
 });
+
+describe("weather (task 2.2)", () => {
+  it("everyone gets the server's weather in the room state", async () => {
+    const p = await newPlayer();
+    const st = p.room.state as { weather: string; weatherSince: number };
+    expect(["clear", "cloudy", "rain", "storm", "fog", "snow"]).toContain(st.weather);
+    expect(st.weatherSince).toBeGreaterThan(0);
+    const room = matchMaker.getLocalRoomById(p.room.roomId) as unknown as WorldRoom;
+    room.weather.set("rain");
+    room.publishWeather();
+    await wait(300);
+    expect(st.weather).toBe("rain");
+    await p.room.leave();
+  });
+
+  it("abuse: a client cannot change the weather", async () => {
+    const p = await newPlayer();
+    const room = matchMaker.getLocalRoomById(p.room.roomId) as unknown as WorldRoom;
+    room.weather.set("clear");
+    room.publishWeather();
+    for (const type of ["weather", "setWeather"]) p.room.send(type, { weather: "storm" });
+    await wait(300);
+    expect(p.rejected.filter((r) => r.startsWith("unknown message type")).length).toBe(2);
+    expect((p.room.state as { weather: string }).weather).toBe("clear");
+    await p.room.leave();
+  });
+
+  it("fog really shortens sight outdoors: someone you could see in clear weather is hidden in fog", async () => {
+    const a = await newPlayer();
+    const b = await newPlayer();
+    await goOutside(a);
+    await goOutside(b);
+    const room = matchMaker.getLocalRoomById(a.room.roomId) as unknown as WorldRoom;
+    room.weather.set("clear");
+    const pa = room.state.players.get(a.room.sessionId)!;
+    const pb = room.state.players.get(b.room.sessionId)!;
+    pa.x = pb.x + VIEW_RANGE * 0.8;
+    pa.y = pb.y;
+    await wait(500);
+    expect(players(b).get(a.room.sessionId)).toBeTruthy();
+    room.weather.set("fog");
+    await wait(500);
+    expect(players(b).get(a.room.sessionId)).toBeUndefined();
+    room.weather.set("clear");
+    await wait(500);
+    expect(players(b).get(a.room.sessionId)).toBeTruthy();
+    await a.room.leave();
+    await b.room.leave();
+  }, 40_000);
+});

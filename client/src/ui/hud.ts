@@ -56,13 +56,20 @@ export class Hud {
     room.onMessage("sound", (m: { name: string }) => audio.play(m.name as SfxName, { volume: 0.7 }));
   }
 
+  /** Weather icon and name shown next to the clock. */
+  private weather = "";
+  setWeather(icon: string, name: string) {
+    this.weather = icon;
+    this.clock.dataset.weather = name;
+  }
+
   setTime(t: WorldTime) {
     const hh = String(t.hour).padStart(2, "0");
     const mm = String(Math.floor(t.minute / 10) * 10).padStart(2, "0");
-    const text = `${PART_ICON[t.part] ?? ""} ${hh}:${mm} · ${t.part}`;
+    const text = `${PART_ICON[t.part] ?? ""} ${hh}:${mm} · ${t.part}${this.weather ? ` · ${this.weather}` : ""}`;
     if (this.clock.textContent !== text) {
       this.clock.textContent = text;
-      this.clock.title = `${t.season}, day ${t.seasonDay}`;
+      this.clock.title = `${t.season}, day ${t.seasonDay}${this.clock.dataset.weather ? ` · ${this.clock.dataset.weather}` : ""}`;
     }
   }
 

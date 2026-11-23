@@ -20,8 +20,8 @@ next. Updated after every task.
 - Repo: https://github.com/Ghostworkerr/talesreach
 
 ## HANDOFF — read this if you are a new Claude Code session picking up the work
-Everything up to and including **task 2.1** is finished, tested (114 tests) and on `main`.
-**Next task: 2.2 (weather)** in `docs/TASKS.md`. Phase 1 gate still waits for the owner's playtest;
+Everything up to and including **task 2.2** is finished, tested (124 tests) and on `main`.
+**Next task: 2.3 (combat core)** in `docs/TASKS.md`. Phase 1 gate still waits for the owner's playtest;
 the owner asked for work to continue past gates.
 
 **How the world is built now (from 2.1):**
@@ -41,6 +41,13 @@ the owner asked for work to continue past gates.
   (and unloads far ones; lights come and go with chunks). `WorldScene.travel` fades out, swaps map,
   `Predictor.teleport`s, fades in. Opening cutscene now starts outside at the crossroads, pans to the
   inn's door, fades inside, then the creator.
+- Weather (from 2.2): `shared/src/weather.ts` (kinds, season odds, durations, gameplay effects
+  table: sight/wet/fire/caravans/gloom/lightning — later tasks read it: fire damage in 2.3, crops in
+  2.11). Server `server/src/world/weather.ts` rolls every 15–30 min, room publishes
+  `weather/weatherPrev/weatherSince`; fog/storm shrink the server's view range outdoors.
+  Client `client/src/weather.ts` draws rain+splashes, snow, fog layers + vignette, storm gloom,
+  lightning (same flashes for everyone, from the server clock) + thunder; rain/wind ambience
+  (muffled indoors); wet footsteps splash. Dev only: `/play/?weather=storm` (also rain/fog/snow/cloudy).
 - Known small polish items: market stall art reads like little flags; the region has big empty
   grass areas (add more detail in a later polish pass); dirt inner-corner tiles look OK but were
   never checked closely.
@@ -90,7 +97,8 @@ but characters are lost. Setting up the Neon database (below) fixes that.
 | 1.8 Homepage + PWA | done | homepage at /, game at /play/, rules, privacy, credits, installable app + offline cache |
 | Phase 1 gate | waiting for owner | 10 friends, 30 min, phones + PCs |
 | 2.1 Open world in chunks + interiors | done | 128×128 region + inn interior, doors, chunk streaming, interest management |
-| 2.2–2.12 | not started | next: 2.2 weather |
+| 2.2 Weather | done | server-rolled weather, rain/fog/storm/snow visuals and sounds, fog shortens sight |
+| 2.3–2.12 | not started | next: 2.3 combat core |
 
 ## Waiting for the owner
 - **Database (so saves survive server restarts):** create a free Neon Postgres database and put its
@@ -121,3 +129,4 @@ but characters are lost. Setting up the Neon database (below) fixes that.
 - 2026-11-23: Polish pass (before the Phase 1 playtest): automatic reconnection (the server keeps your character for 30 s when a phone drops; same place after), no ghosts when reloading (a waiting copy is cancelled when the same account rejoins), loading percentage, welcome message fades, one-time "How to play" card, name labels no longer overlap. 102 tests.
 - 2026-11-23: 2.1 started — region map (128×128: town, forest + grove, farms, marsh) and inn-interior map generators on branch `wip/task-2.1-region`. Homepage now wakes the sleeping server early. Handoff notes added at the top of this file.
 - 2026-11-23: 2.1 done — the Crossroads region (128×128 tiles: town with the inn, cottages and market; Whisperwood forest with the Ancient Grove; Brightfield Farms; Fenmarsh marsh edge; roads) streamed to phones in 32×32-tile chunks; the inn is now an interior behind its door (short fade). The server decides door travel; each player only receives people near them on the same map. Opening scene starts outside. 114 tests.
+- 2026-11-23: 2.2 done — server-owned weather for the region (clear, cloudy, rain, storm, fog; snow ready for mountains), rolled every 15–30 minutes with season odds and blended in over 20 s. Rain with splashes, drifting fog that closes in, storm gloom with lightning + delayed thunder (same flashes for everyone), rain and wind sounds (muffled indoors), splashing footsteps on wet ground, weather icon by the clock. Fog and storms really shorten sight: the server stops sending people beyond the shorter range. Thunder and wind sounds made in code (CC0). 124 tests.

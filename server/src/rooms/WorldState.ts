@@ -46,6 +46,10 @@ export class WorldState extends Schema {
   @view() @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   @view() @type({ map: NpcState }) npcs = new MapSchema<NpcState>();
   /** The bard's current song (index into BARD_SONGS) and a counter that changes on each request. */
+  /** The region's weather (rolled by the server): now, before, and when it changed (epoch ms). */
+  @type("string") weather = "clear";
+  @type("string") weatherPrev = "clear";
+  @type("float64") weatherSince = 0;
   @type("uint8") bardSong = 0;
   @type("uint16") bardSongSeq = 0;
 }

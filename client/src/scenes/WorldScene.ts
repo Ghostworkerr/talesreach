@@ -8,6 +8,9 @@ import {
   Predictor,
   findPath,
   START_MAP,
+  INDOOR_MAPS,
+  WEATHER_LABELS,
+  type WeatherKind,
   stepMovement,
   zoneAt,
   type Appearance,
@@ -28,6 +31,7 @@ import { SocialUI } from "../ui/social";
 import { DPR } from "../display";
 import { Lighting } from "../lighting";
 import { StreamedMap } from "../worldMap";
+import { WeatherView } from "../weather";
 import { Hud } from "../ui/hud";
 import { WORLD_ZOOM } from "../display";
 import { SHEETS, loadArt } from "../art";
@@ -49,6 +53,9 @@ interface WorldView {
   serverMs: number;
   bardSong: number;
   bardSongSeq: number;
+  weather: string;
+  weatherPrev: string;
+  weatherSince: number;
   npcs: { forEach(cb: (n: NpcView, id: string) => void): void };
   players: {
     forEach(cb: (p: PlayerView, id: string) => void): void;
@@ -91,7 +98,7 @@ const STEP_PX = PLAYER_SPEED * MOVE_STEP_SECONDS;
 /** After a hiccup, catch up at most this many steps in one frame (keeps us under the server's rate limit). */
 const MAX_STEPS_PER_FRAME = 2;
 /** Draw order: map layers below characters, tree tops above, names on top of everything. */
-const DEPTH = { ground: 0, walls: 1, decor: 2, furniture: 3, above: 100_000, lighting: 150_000, labels: 200_000, marker: 2.5 } as const;
+const DEPTH = { ground: 0, walls: 1, decor: 2, furniture: 3, above: 100_000, weather: 120_000, lighting: 150_000, flash: 160_000, labels: 200_000, marker: 2.5 } as const;
 
 export class WorldScene extends Phaser.Scene {
   private room: Room | null = null;
@@ -102,6 +109,10 @@ export class WorldScene extends Phaser.Scene {
   private streamTimer = 0;
   /** Going through a door: no input until the new map is ready. */
   private travelling = false;
+  /** Rain, fog, snow, storms (the server picks; we draw). */
+  private weatherView: WeatherView | null = null;
+  /** The current place's own ambience (fire in the inn, forest outdoors); weather adds rain/wind. */
+  private zoneAmbience: AmbienceLayer = "forest";
   /** Your own character: predicted locally, corrected by the server. */
   private predictor: Predictor | null = null;
   /** Visual offset that fades out so server corrections never look like a jump. */
@@ -143,6 +154,7 @@ export class WorldScene extends Phaser.Scene {
 
   create() {
     this.cameras.main.setZoom(WORLD_ZOOM);
+    this.weatherView = new WeatherView(this, DEPTH.weather, DEPTH.flash);
     this.scene.launch("ui");
     // The UI scene starts on the next tick; hook its taps once it exists.
     this.events.once(Phaser.Scenes.Events.UPDATE, () => this.hookTaps());
@@ -651,7 +663,16 @@ export class WorldScene extends Phaser.Scene {
   private updateWorld(deltaMs: number) {
     const time = worldTime(Date.now() + this.serverOffset + this.devTimeShift);
     const me = this.predictor?.position ?? null;
-    this.lighting?.update(deltaMs, time.darkness, me, this.zone?.props.mood === "tavern");
+    const indoors = INDOOR_MAPS.includes(this.world?.name ?? "");
+    const sky = devWeather() ?? (this.room?.state as WorldView | undefined);
+    if (sky && this.weatherView) {
+      this.weatherView.update(deltaMs, sky, Date.now() + this.serverOffset, indoors);
+      const wet = this.weatherView.wet && !indoors;
+      for (const a of this.avatars.values()) a.view.wet = wet;
+    }
+    // Clouds and storms darken the day outdoors.
+    const gloom = indoors ? 0 : (this.weatherView?.gloom ?? 0);
+    this.lighting?.update(deltaMs, Math.min(1, time.darkness + gloom * (1 - time.darkness)), me, this.zone?.props.mood === "tavern");
     this.updateNpcs(deltaMs);
     // Night falls: outdoor music changes (the inn keeps its own tunes).
     const night = time.darkness > 0.5;
@@ -662,7 +683,10 @@ export class WorldScene extends Phaser.Scene {
     this.clockTimer -= deltaMs;
     if (this.clockTimer <= 0) {
       this.clockTimer = 1000;
+      const kind = this.weatherView?.kind as WeatherKind | undefined;
+      if (kind && this.hud) this.hud.setWeather(WEATHER_LABELS[kind].icon, indoors ? `${WEATHER_LABELS[kind].name} outside` : WEATHER_LABELS[kind].name);
       this.hud?.setTime(time);
+      this.applyAmbience();
     }
     if (me && this.hud) {
       let best: { name: string; label: string; d: number } | null = null;
@@ -695,7 +719,17 @@ export class WorldScene extends Phaser.Scene {
     const amb = (zone?.props.ambience as AmbienceLayer | undefined) ?? "forest";
     this.surface = (zone?.props.surface as Surface | undefined) ?? "grass";
     audio.setMood(mood);
-    audio.setAmbience({ [amb]: 1 });
+    this.zoneAmbience = amb;
+    this.applyAmbience();
+  }
+
+  /** The place's ambience plus the weather's rain and wind (muffled indoors). */
+  private applyAmbience() {
+    const indoors = INDOOR_MAPS.includes(this.world?.name ?? "");
+    const weather = this.weatherView?.ambience(indoors) ?? {};
+    // Rain drowns out the birds.
+    const base = this.zoneAmbience === "forest" ? Math.max(0.2, 1 - (weather.rain ?? 0)) : 1;
+    audio.setAmbience({ ...weather, [this.zoneAmbience]: Math.max(base, weather[this.zoneAmbience] ?? 0) });
   }
 
   private createAvatar(p: PlayerView, isMe: boolean): Avatar {
@@ -713,6 +747,13 @@ export class WorldScene extends Phaser.Scene {
       .setResolution(WORLD_ZOOM);
     return { view, pid: p.pid, name: p.name, look: dollKey(p), label, interp: new Interpolator(100) };
   }
+}
+
+/** Development builds only: `?weather=storm` shows that weather (visuals only; the server still decides). */
+function devWeather(): { weather: string; weatherPrev: string; weatherSince: number } | null {
+  if (!import.meta.env.DEV) return null;
+  const w = new URLSearchParams(location.search).get("weather");
+  return w ? { weather: w, weatherPrev: w, weatherSince: 0 } : null;
 }
 
 /** Development builds only: shift the clock so `?hour=H` is the current world hour. */

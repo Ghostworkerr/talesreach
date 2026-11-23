@@ -10,7 +10,7 @@ import Phaser from "phaser";
  */
 
 export type Mood = "tavern" | "day" | "night" | "forest" | "combat";
-export type AmbienceLayer = "forest" | "rain" | "fire";
+export type AmbienceLayer = "forest" | "rain" | "fire" | "wind";
 export type Surface = "grass" | "wood";
 
 const MUSIC: Record<Mood, string[]> = {
@@ -25,10 +25,13 @@ const AMBIENCE: Record<AmbienceLayer, string> = {
   forest: "audio/ambience/forest-day.mp3",
   rain: "audio/ambience/rain.mp3",
   fire: "audio/ambience/fire.mp3",
+  wind: "audio/ambience/wind.mp3",
 };
 
 /** Short effects: small, preloaded with the game. */
 export const SFX = {
+  thunder: "audio/sfx/thunder.mp3",
+  thunderFar: "audio/sfx/thunder-far.mp3",
   click: "audio/sfx/ui-click.mp3",
   open: "audio/sfx/ui-open.mp3",
   close: "audio/sfx/ui-close.mp3",
@@ -94,7 +97,7 @@ class AudioManager {
   private trackIndex = 0;
   private music: AnySound | null = null;
   private currentKey = "";
-  private ambience = new Map<AmbienceLayer, { sound: AnySound | null; level: number }>();
+  private ambience = new Map<AmbienceLayer, { sound: AnySound | null; level: number; loading: boolean }>();
   private listeners = new Set<(s: AudioSettings) => void>();
 
   /** Bind to a long-lived scene (its loader and tweens are used for lazy music). */
@@ -157,12 +160,15 @@ class AudioManager {
     const scene = this.scene;
     for (const layer of Object.keys(AMBIENCE) as AmbienceLayer[]) {
       const level = levels[layer] ?? 0;
-      const entry = this.ambience.get(layer) ?? { sound: null, level: 0 };
+      const entry = this.ambience.get(layer) ?? { sound: null, level: 0, loading: false };
       entry.level = level;
       this.ambience.set(layer, entry);
       // Remembered even before audio is ready; restart() plays it once sound is allowed.
       if (!scene || scene.sound.locked) continue;
       if (level > 0 && !entry.sound) {
+        // One try per layer: a file that fails to load isn't fetched again every second.
+        if (entry.loading) continue;
+        entry.loading = true;
         const url = AMBIENCE[layer];
         this.withAudio(`amb:${layer}`, url, () => {
           if (entry.sound) return;

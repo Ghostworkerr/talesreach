@@ -27,6 +27,14 @@ the in-game Credits screen.
 | Forest Ambience | TinyWorlds | https://opengameart.org/content/forest-ambience | CC0 1.0 | `audio/ambience/forest-day.mp3` |
 | AMB Rain Loop 1 | Kresiek | https://opengameart.org/content/amb-rain-loop-1 | CC0 1.0 | `audio/ambience/rain.mp3` |
 | Fireplace Sound loop | PagDev | https://opengameart.org/content/fireplace-sound-loop | CC0 1.0 | `audio/ambience/fire.mp3` |
+| Wind loop (made in code from filtered noise) | Talesreach | this repository | CC0 1.0 | `audio/ambience/wind.mp3` |
+
+## Weather sounds made for Talesreach (CC0)
+Synthesised from filtered noise with ffmpeg (no outside recordings), released as CC0.
+| Sound | File |
+|---|---|
+| Thunder (close crack + rumble) | `audio/sfx/thunder.mp3` |
+| Thunder (distant rumble) | `audio/sfx/thunder-far.mp3` |
 
 ## Sound effects (all CC0, Kenney)
 | Pack | Author | Source | Licence | Files |

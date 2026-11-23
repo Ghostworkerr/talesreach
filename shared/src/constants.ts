@@ -33,3 +33,6 @@ export const START_MAP = "inn";
 /** Maps the world room serves. */
 export const WORLD_MAPS = ["inn", "crossroads"] as const;
 export type WorldMapName = (typeof WORLD_MAPS)[number];
+
+/** Interior maps: weather stays outside (you still hear it), and lighting is softer. */
+export const INDOOR_MAPS: readonly string[] = ["inn"];

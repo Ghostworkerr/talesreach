@@ -1,6 +1,7 @@
 import { Room, ServerError, type Client, type Deferred } from "@colyseus/core";
 import { StateView } from "@colyseus/schema";
 import {
+  INDOOR_MAPS,
   START_MAP,
   VIEW_RANGE,
   VIEW_RANGE_LEAVE,
@@ -20,6 +21,7 @@ import {
 } from "@talesreach/shared";
 import { NpcState, PlayerState, WorldState } from "./WorldState.js";
 import { loadMap } from "../world/maps.js";
+import { WeatherSystem } from "../world/weather.js";
 import { getAccountStore } from "../services.js";
 import type { Account } from "../db/store.js";
 import { storedAppearance } from "../http/accounts.js";
@@ -59,6 +61,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   /** The inn interior: where new characters arrive, the staff work and rooms are rented. */
   readonly map = this.maps[START_MAP]!;
   private tickCount = 0;
+  /** The Crossroads region's weather. */
+  readonly weather = new WeatherSystem();
   /** Which session each account is playing in (one character per account at a time). */
   private readonly sessionsByAccount = new Map<string, string>();
   private readonly accountBySession = new Map<string, Account>();
@@ -83,6 +87,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
   override onCreate() {
     this.state = new WorldState();
+    this.publishWeather();
     this.npcs = new Npcs({
       map: this.map,
       mapName: START_MAP,
@@ -129,7 +134,10 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
     this.setSimulationInterval(() => this.tick(), 1000 / TICK_RATE);
     // Share the server clock once a second (clients run the world clock from it).
-    this.clock.setInterval(() => (this.state.serverMs = Date.now()), 1000);
+    this.clock.setInterval(() => {
+      this.state.serverMs = Date.now();
+      if (this.weather.update()) this.publishWeather();
+    }, 1000);
   }
 
   /** Only players with a valid device token (from the account API) may enter. */
@@ -223,6 +231,13 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     if (this.tickCount % VIEW_EVERY_TICKS === 0) for (const client of this.clients) this.refreshView(client);
   }
 
+  /** Copy the weather into the shared state (everyone sees the same sky). */
+  publishWeather() {
+    this.state.weather = this.weather.kind;
+    this.state.weatherPrev = this.weather.previous;
+    this.state.weatherSince = this.weather.since;
+  }
+
   /** Move a player to an arrival point on another map (through a door). */
   private travel(sessionId: string, player: PlayerState, mapName: string, spotName: string) {
     const target = this.maps[mapName];
@@ -250,10 +265,12 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     if (!me) return;
     if (fresh || !client.view) client.view = new StateView();
     const view = client.view;
+    // Fog and storms shorten sight outdoors: you really can't see (or be seen) as far.
+    const sight = INDOOR_MAPS.includes(me.map) ? 1 : this.weather.effects.sight;
     const sees = (o: { x: number; y: number; map: string }) => {
       if (o.map !== me.map) return false;
       const d = Math.hypot(o.x - me.x, o.y - me.y);
-      return view.has(o as never) ? d <= VIEW_RANGE_LEAVE : d <= VIEW_RANGE;
+      return view.has(o as never) ? d <= VIEW_RANGE_LEAVE * sight : d <= VIEW_RANGE * sight;
     };
     const apply = (o: PlayerState | NpcState, visible: boolean) => {
       if (visible && !view.has(o)) view.add(o);
