@@ -29,8 +29,8 @@ next. Updated after every task.
 | Phase 0 gate | passed | owner confirmed phone + PC movement |
 | Polish: sharp + smooth + walk animation | done | paper-doll walk cycle |
 | 1.1 Music and sound | done | 6 CC0 tracks, 3 ambience loops, 24 Kenney effects; audio manager + settings panel |
-| 1.2 Tavern map | next | |
-| 1.3 Guest play + accounts | todo | |
+| 1.2 Tavern map | done | Tiled map built by tools/maps/build-crossroads.mjs; server collision; tap-to-move |
+| 1.3 Guest play + accounts | next | |
 | 1.4 Character creator | todo | |
 | 1.5 Chat + safety | todo | |
 | 1.6 World clock + inn rooms | todo | |
@@ -45,3 +45,5 @@ next. Updated after every task.
 - 2026-11-23: Phase 0 complete; walk animation reworked after owner feedback — owner confirmed it works.
 - 2026-11-23: Design study written (docs/DESIGN_NOTES.md): first-visit flow, opening scene, creator, cutscene system.
 - 2026-11-23: 1.1 done — music by mood with crossfades, ambience layers, footsteps, gear-button settings panel (music/ambience/effects/mute, saved per device). Audio total 5.5 MB, loaded on demand.
+- 2026-11-23: 1.2 done — Crossroads Inn + courtyard Tiled map (bar, hearth, tables, bard corner, 2 rentable rooms, crossroads outside). Server uses the same map for walls; tap/click-to-move with A* routes and a marker; music/ambience/footsteps change between inn and courtyard. 35 tests.
+- 2026-11-23: Repo now stores Unix line endings (.gitattributes).

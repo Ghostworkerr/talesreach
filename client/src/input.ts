@@ -6,11 +6,17 @@ import { DPR } from "./display";
 const JOYSTICK_RADIUS = 56 * DPR;
 const KNOB_RADIUS = 24 * DPR;
 const DEAD_ZONE = 8 * DPR;
+/** A press counts as a tap if it is short and barely moves. */
+const TAP_MAX_MS = 350;
+const TAP_MAX_MOVE = 14 * DPR;
 
 /**
  * Turns WASD / arrow keys (PC) and a virtual joystick (phone) into a walking
  * direction. The joystick appears wherever the player first touches the left
  * half of the screen and follows their thumb.
+ *
+ * Tap-to-move: a quick tap on the right half (phone) or a click anywhere (PC)
+ * reports a screen point; the world scene walks you there.
  */
 export class MoveInput {
   private keys: Record<"w" | "a" | "s" | "d" | "up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key> | null;
@@ -19,6 +25,8 @@ export class MoveInput {
   private stick: Vec2 = { x: 0, y: 0 };
   private base: Phaser.GameObjects.Arc;
   private knob: Phaser.GameObjects.Arc;
+  private presses = new Map<number, { x: number; y: number; t: number }>();
+  private tapListeners = new Set<(screenX: number, screenY: number) => void>();
 
   constructor(private readonly scene: Phaser.Scene) {
     const kb = scene.input.keyboard;
@@ -40,6 +48,12 @@ export class MoveInput {
     scene.input.on("pointerupoutside", this.onUp, this);
   }
 
+  /** Called with the screen point of each tap/click meant as "walk there". */
+  onTap(fn: (screenX: number, screenY: number) => void) {
+    this.tapListeners.add(fn);
+    return () => this.tapListeners.delete(fn);
+  }
+
   /** Current direction, each axis in -1..1, length at most 1. */
   direction(): Vec2 {
     if (this.pointerId !== null) return this.stick;
@@ -59,7 +73,9 @@ export class MoveInput {
   }
 
   private onDown(p: Phaser.Input.Pointer) {
-    if (this.pointerId !== null || p.x > this.scene.scale.width / 2) return;
+    this.presses.set(p.id, { x: p.x, y: p.y, t: performance.now() });
+    // Mice never get a joystick (clicks are tap-to-move); thumbs on the left half do.
+    if (!p.wasTouch || this.pointerId !== null || p.x > this.scene.scale.width / 2) return;
     this.pointerId = p.id;
     this.origin.set(p.x, p.y);
     this.base.setPosition(p.x, p.y).setVisible(true);
@@ -82,6 +98,15 @@ export class MoveInput {
   }
 
   private onUp(p: Phaser.Input.Pointer) {
+    const press = this.presses.get(p.id);
+    this.presses.delete(p.id);
+    // A short press that barely moved, and not the joystick's finger, means "walk there".
+    const isTap =
+      press !== undefined &&
+      p.id !== this.pointerId &&
+      performance.now() - press.t < TAP_MAX_MS &&
+      Math.hypot(p.x - press.x, p.y - press.y) < TAP_MAX_MOVE;
+    if (isTap) for (const fn of this.tapListeners) fn(press.x, press.y);
     if (p.id !== this.pointerId) return;
     this.pointerId = null;
     this.stick = { x: 0, y: 0 };

@@ -4,18 +4,22 @@ import {
   Interpolator,
   MOVE_STEP_SECONDS,
   PLAYER_RADIUS,
-  stepMovement,
+  PLAYER_SPEED,
   Predictor,
-  WORLD_HEIGHT,
-  WORLD_WIDTH,
+  findPath,
+  parseTiledMap,
+  stepMovement,
+  zoneAt,
+  type GameMap,
+  type MapZone,
   type Vec2,
 } from "@talesreach/shared";
 import { joinWorld } from "../net";
 import { WORLD_ZOOM } from "../display";
-import { READY_MADE_CHARACTERS, RPG, SHEETS, TILE, loadArt } from "../art";
+import { MAPS, READY_MADE_CHARACTERS, SHEETS, loadArt } from "../art";
 import type { UIScene } from "./UIScene";
 import { CharacterView, snap } from "../character";
-import { audio } from "../audio";
+import { audio, type AmbienceLayer, type Mood, type Surface } from "../audio";
 
 /** Shape of the state the server sends (kept loose: the server owns it). */
 interface PlayerView {
@@ -39,14 +43,16 @@ interface Avatar {
 }
 
 const STEP_MS = MOVE_STEP_SECONDS * 1000;
-/** Tiles of forest drawn outside each edge of the walkable field. */
-const FOREST_MARGIN = 3;
+const STEP_PX = PLAYER_SPEED * MOVE_STEP_SECONDS;
 /** After a hiccup, catch up at most this many steps in one frame (keeps us under the server's rate limit). */
 const MAX_STEPS_PER_FRAME = 2;
+/** Draw order: map layers below characters, tree tops above, names on top of everything. */
+const DEPTH = { ground: 0, walls: 1, decor: 2, furniture: 3, above: 100_000, labels: 200_000, marker: 2.5 } as const;
 
 export class WorldScene extends Phaser.Scene {
   private room: Room | null = null;
   private avatars = new Map<string, Avatar>();
+  private map!: GameMap;
   /** Your own character: predicted locally, corrected by the server. */
   private predictor: Predictor | null = null;
   /** Visual offset that fades out so server corrections never look like a jump. */
@@ -54,6 +60,12 @@ export class WorldScene extends Phaser.Scene {
   private accumulator = 0;
   /** Direction used for the step in progress (for smooth drawing between steps). */
   private stepDir: Vec2 = { x: 0, y: 0 };
+  /** Tap-to-move route (world-pixel waypoints) and how long we've made no progress. */
+  private path: Vec2[] = [];
+  private stuckMs = 0;
+  private lastPathPos: Vec2 | null = null;
+  private zone: MapZone | undefined;
+  private surface: Surface = "wood";
 
   constructor() {
     super("world");
@@ -64,64 +76,74 @@ export class WorldScene extends Phaser.Scene {
   }
 
   create() {
-    this.drawGround();
-    // The forest ring sits just outside the walkable field, so the camera may show it.
-    const m = FOREST_MARGIN * TILE;
-    this.cameras.main.setBounds(-m, -m, WORLD_WIDTH + m * 2, WORLD_HEIGHT + m * 2);
-    // 2x zoom (times screen density) keeps characters and names readable on a phone.
-    this.cameras.main.setZoom(WORLD_ZOOM);
-    this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
+    this.buildMap();
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, this.map.pixelWidth, this.map.pixelHeight);
+    cam.setZoom(WORLD_ZOOM);
+    const spawn = this.map.points.find((p) => p.type === "spawn");
+    cam.centerOn(spawn?.x ?? this.map.pixelWidth / 2, spawn?.y ?? this.map.pixelHeight / 2);
     this.scene.launch("ui");
+    // The UI scene starts on the next tick; hook its taps once it exists.
+    this.events.once(Phaser.Scenes.Events.UPDATE, () => this.hookTaps());
     void this.connect();
   }
 
-  /** Grass field with small plants, ringed by forest just outside the walkable area. */
-  private drawGround() {
-    const M = FOREST_MARGIN;
-    const cols = Math.ceil(WORLD_WIDTH / TILE) + M * 2;
-    const rows = Math.ceil(WORLD_HEIGHT / TILE) + M * 2;
-    const map = this.make.tilemap({ tileWidth: TILE, tileHeight: TILE, width: cols, height: rows });
-    const tiles = map.addTilesetImage(SHEETS.rpg.key, SHEETS.rpg.key, TILE, TILE, 0, 1);
-    if (!tiles) return;
-    const ground = map.createBlankLayer("ground", tiles, -M * TILE, -M * TILE);
-    if (!ground) return;
-    // Fixed seed so every player sees the same field.
-    const rnd = new Phaser.Math.RandomDataGenerator(["talesreach"]);
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const roll = rnd.frac();
-        ground.putTileAt(roll < 0.2 ? RPG.grassAlt : RPG.grass, x, y);
-        const inField = x >= M && x < cols - M && y >= M && y < rows - M;
-        if (inField && roll > 0.95) {
-          const px = (x - M) * TILE + TILE / 2;
-          const py = (y - M) * TILE + TILE / 2;
-          this.add.image(px, py, SHEETS.rpg.key, rnd.pick([...RPG.decor])).setDepth(1);
-        }
-      }
-    }
-    // Forest ring: three staggered rows of trees outside each edge.
-    for (let ring = 0; ring < M; ring++) {
-      const off = ring * TILE + TILE / 2;
-      for (let x = -M * TILE + (ring % 2) * 8; x < WORLD_WIDTH + M * TILE; x += TILE) {
-        this.addTree(x + TILE / 2, -off + TILE / 2, rnd);
-        this.addTree(x + TILE / 2, WORLD_HEIGHT + off + TILE * 1.5, rnd);
-      }
-      for (let y = -TILE / 2; y < WORLD_HEIGHT + TILE * 2; y += TILE) {
-        this.addTree(-off, y + (ring % 2) * 8, rnd);
-        this.addTree(WORLD_WIDTH + off, y + (ring % 2) * 8, rnd);
-      }
-    }
-    for (let i = 0; i < 14; i++) {
-      this.add
-        .image(rnd.between(3, WORLD_WIDTH / TILE - 4) * TILE, rnd.between(3, WORLD_HEIGHT / TILE - 4) * TILE, SHEETS.rpg.key, RPG.bush)
-        .setDepth(1);
-    }
+  /** Draw the Tiled map in layers; the server uses the same file for collision. */
+  private buildMap() {
+    const tm = this.make.tilemap({ key: MAPS.crossroads.key });
+    const sets = [tm.addTilesetImage("rpg", SHEETS.rpg.key), tm.addTilesetImage("indoor", SHEETS.indoor.key)].filter(
+      (t): t is Phaser.Tilemaps.Tileset => t !== null,
+    );
+    const layer = (name: string, depth: number) => tm.createLayer(name, sets, 0, 0)?.setDepth(depth);
+    layer("Ground", DEPTH.ground);
+    layer("Walls", DEPTH.walls);
+    layer("Decor", DEPTH.decor);
+    layer("Furniture", DEPTH.furniture);
+    layer("Above", DEPTH.above);
+    this.map = parseTiledMap(this.cache.tilemap.get(MAPS.crossroads.key).data);
   }
 
-  private addTree(x: number, baseY: number, rnd: Phaser.Math.RandomDataGenerator) {
-    const pine = rnd.frac() < 0.5;
-    this.add.image(x, baseY - TILE / 2, SHEETS.rpg.key, pine ? RPG.pineTrunk : RPG.treeTrunk).setDepth(baseY);
-    this.add.image(x, baseY - TILE * 1.5, SHEETS.rpg.key, pine ? RPG.pineTop : RPG.treeTop).setDepth(baseY);
+  private hookTaps() {
+    const ui = this.scene.get("ui") as UIScene;
+    if (!ui.moveInput) {
+      this.time.delayedCall(50, () => this.hookTaps());
+      return;
+    }
+    ui.moveInput.onTap((sx, sy) => this.walkTo(this.cameras.main.getWorldPoint(sx, sy)));
+  }
+
+  /** Tap-to-move: plan a route around walls and furniture, and show where we're going. */
+  private walkTo(target: Vec2) {
+    if (!this.predictor) return;
+    const route = findPath(this.map.grid, this.predictor.position, target);
+    if (route.length === 0) {
+      audio.play("error", { volume: 0.4 });
+      return;
+    }
+    // End exactly where tapped if that spot is open, else at the nearest open tile centre.
+    const t = this.map.grid.tile;
+    const last = route[route.length - 1]!;
+    if (Math.floor(target.x / t) === Math.floor(last.x / t) && Math.floor(target.y / t) === Math.floor(last.y / t)) {
+      route[route.length - 1] = { x: target.x, y: target.y };
+    }
+    this.path = route;
+    this.stuckMs = 0;
+    this.lastPathPos = null;
+    this.showMarker(route[route.length - 1]!);
+  }
+
+  /** A small ring that pulses where you tapped (every action is animated). */
+  private showMarker(p: Vec2) {
+    const ring = this.add.ellipse(snap(p.x), snap(p.y + 2), 12, 6).setStrokeStyle(1, 0xfff3c4, 0.9).setDepth(DEPTH.marker);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 0.3,
+      scaleY: 0.3,
+      alpha: 0,
+      duration: 500,
+      ease: "Quad.easeIn",
+      onComplete: () => ring.destroy(),
+    });
   }
 
   private async connect() {
@@ -135,10 +157,7 @@ export class WorldScene extends Phaser.Scene {
         say(`The world is waking up… (${secs}s — the free server sleeps when nobody plays, this can take a minute)`),
       );
       this.room = room;
-      say("Connected. Move with WASD / arrows, or drag on the left of the screen.");
-      // Outdoors by day for now (the inn and day/night arrive in tasks 1.2 and 1.6).
-      audio.setMood("day");
-      audio.setAmbience({ forest: 1 });
+      say("Welcome to the Crossroads Inn. Move with WASD / arrows, drag on the left, or tap where to go.");
       room.onMessage("pong", () => undefined);
       room.onMessage("rejected", () => undefined);
       room.onStateChange(() => this.onServerUpdate(room));
@@ -166,7 +185,7 @@ export class WorldScene extends Phaser.Scene {
         a = this.createAvatar(p, isMe);
         this.avatars.set(id, a);
         if (isMe) {
-          this.predictor = new Predictor({ x: p.x, y: p.y });
+          this.predictor = new Predictor({ x: p.x, y: p.y }, this.map.grid);
           this.cameras.main.startFollow(a.view.root, true, 1, 1);
         }
       }
@@ -192,6 +211,43 @@ export class WorldScene extends Phaser.Scene {
     if (!room) return;
     this.stepInput(room, deltaMs);
     this.draw(room, deltaMs);
+    this.updateZone();
+  }
+
+  /** Which way to walk this step: keys/joystick win; otherwise follow a tap-to-move route. */
+  private wantedDirection(deltaMs: number): Vec2 {
+    const ui = this.scene.get("ui") as UIScene;
+    const manual = ui.moveInput?.direction() ?? { x: 0, y: 0 };
+    if (manual.x !== 0 || manual.y !== 0) {
+      this.path = [];
+      return manual;
+    }
+    const me = this.predictor?.position;
+    if (!me || this.path.length === 0) return { x: 0, y: 0 };
+    // Drop waypoints we've reached (within a step).
+    while (this.path.length) {
+      const wp = this.path[0]!;
+      const d = Math.hypot(wp.x - me.x, wp.y - me.y);
+      if (d > (this.path.length === 1 ? 1.5 : STEP_PX)) break;
+      this.path.shift();
+    }
+    const wp = this.path[0];
+    if (!wp) return { x: 0, y: 0 };
+    // Give up if something (another player, a wall corner) keeps us from moving.
+    if (this.lastPathPos && Math.hypot(me.x - this.lastPathPos.x, me.y - this.lastPathPos.y) < 0.1) {
+      this.stuckMs += deltaMs;
+      if (this.stuckMs > 600) {
+        this.path = [];
+        return { x: 0, y: 0 };
+      }
+    } else this.stuckMs = 0;
+    this.lastPathPos = { ...me };
+    const dx = wp.x - me.x;
+    const dy = wp.y - me.y;
+    const d = Math.hypot(dx, dy);
+    // Last waypoint: slow the final step so we stop on the spot instead of overshooting.
+    const scale = this.path.length === 1 && d < STEP_PX ? d / STEP_PX : 1;
+    return { x: Math.round((dx / d) * scale * 100) / 100, y: Math.round((dy / d) * scale * 100) / 100 };
   }
 
   /**
@@ -200,9 +256,8 @@ export class WorldScene extends Phaser.Scene {
    */
   private stepInput(room: Room, deltaMs: number) {
     const predictor = this.predictor;
-    const ui = this.scene.get("ui") as UIScene;
-    if (!predictor || !ui.moveInput) return;
-    const dir = ui.moveInput.direction();
+    if (!predictor) return;
+    const dir = this.wantedDirection(deltaMs);
     if (dir.x === 0 && dir.y === 0) {
       // Let go: finish a step that was mostly done, so you don't slide back.
       const wasMoving = this.stepDir.x !== 0 || this.stepDir.y !== 0;
@@ -229,7 +284,7 @@ export class WorldScene extends Phaser.Scene {
       if (id === room.sessionId && this.predictor) {
         // Glide through the step in progress (drawn every frame, not just 20 times a second).
         const base = this.predictor.position;
-        const ahead = stepMovement(base, this.stepDir, this.accumulator / 1000);
+        const ahead = stepMovement(base, this.stepDir, this.accumulator / 1000, this.map.grid);
         pos = { x: ahead.x + this.correction.x, y: ahead.y + this.correction.y };
       } else {
         pos = a.interp.sample(now);
@@ -237,13 +292,27 @@ export class WorldScene extends Phaser.Scene {
       if (!pos) continue;
       // Walk/idle animation, facing, depth and pixel snapping all happen in the view.
       a.view.update(pos.x, pos.y, deltaMs);
-      a.label.setPosition(snap(pos.x), snap(pos.y - PLAYER_RADIUS - 6)).setDepth(WORLD_HEIGHT + 1);
+      a.label.setPosition(snap(pos.x), snap(pos.y - PLAYER_RADIUS - 6)).setDepth(DEPTH.labels);
     }
+  }
+
+  /** Music, ambience and footstep sound follow where you are (inside the inn or outdoors). */
+  private updateZone() {
+    const me = this.predictor?.position;
+    if (!me) return;
+    const zone = zoneAt(this.map, me.x, me.y);
+    if (zone === this.zone) return;
+    this.zone = zone;
+    const mood = (zone?.props.mood as Mood | undefined) ?? "day";
+    const amb = (zone?.props.ambience as AmbienceLayer | undefined) ?? "forest";
+    this.surface = (zone?.props.surface as Surface | undefined) ?? "grass";
+    audio.setMood(mood);
+    audio.setAmbience({ [amb]: 1 });
   }
 
   private createAvatar(p: PlayerView, isMe: boolean): Avatar {
     const frame = READY_MADE_CHARACTERS[p.colour % READY_MADE_CHARACTERS.length] ?? READY_MADE_CHARACTERS[0];
-    const view = new CharacterView(this, frame, p.x, p.y, isMe, isMe ? () => audio.footstep("grass") : undefined);
+    const view = new CharacterView(this, frame, p.x, p.y, isMe, isMe ? () => audio.footstep(this.surface) : undefined);
     const label = this.add
       .text(p.x, p.y - PLAYER_RADIUS - 4, isMe ? `${p.name} (you)` : p.name, {
         fontFamily: "system-ui, sans-serif",
@@ -253,7 +322,7 @@ export class WorldScene extends Phaser.Scene {
         strokeThickness: 3,
       })
       .setOrigin(0.5, 1)
-      .setDepth(WORLD_HEIGHT + 1)
+      .setDepth(DEPTH.labels)
       .setResolution(WORLD_ZOOM);
     return { view, label, interp: new Interpolator(100) };
   }

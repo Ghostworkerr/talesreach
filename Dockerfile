@@ -22,6 +22,8 @@ COPY client/package.json client/
 RUN npm ci --omit=dev --workspace shared --workspace server
 COPY --from=build /app/shared/dist shared/dist
 COPY --from=build /app/server/dist server/dist
+# Maps: the server uses the same Tiled maps as the client for collision.
+COPY assets/maps assets/maps
 EXPOSE 2567
 USER node
 CMD ["node", "server/dist/index.js"]

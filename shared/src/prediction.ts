@@ -1,4 +1,5 @@
 import { stepMovement, type Vec2 } from "./movement.js";
+import type { CollisionGrid } from "./map.js";
 import { TICK_RATE } from "./constants.js";
 
 /** Each input message moves the player for exactly one server tick. */
@@ -17,8 +18,8 @@ export interface PendingInput {
 }
 
 /** Apply one input exactly the way the server does. */
-export function applyInput(pos: Vec2, input: Vec2): Vec2 {
-  return stepMovement(pos, input, MOVE_STEP_SECONDS);
+export function applyInput(pos: Vec2, input: Vec2, grid?: CollisionGrid): Vec2 {
+  return stepMovement(pos, input, MOVE_STEP_SECONDS, grid);
 }
 
 /**
@@ -31,7 +32,10 @@ export class Predictor {
   private nextSeq = 1;
   position: Vec2;
 
-  constructor(start: Vec2) {
+  constructor(
+    start: Vec2,
+    private readonly grid?: CollisionGrid,
+  ) {
     this.position = { ...start };
   }
 
@@ -41,7 +45,7 @@ export class Predictor {
     this.pending.push(input);
     // Never keep more than a few seconds of unacknowledged inputs.
     if (this.pending.length > TICK_RATE * 5) this.pending.shift();
-    this.position = applyInput(this.position, input);
+    this.position = applyInput(this.position, input, this.grid);
     return input;
   }
 
@@ -49,7 +53,7 @@ export class Predictor {
   reconcile(server: Vec2, ack: number): Vec2 {
     this.pending = this.pending.filter((i) => i.seq > ack);
     let pos: Vec2 = { x: server.x, y: server.y };
-    for (const i of this.pending) pos = applyInput(pos, i);
+    for (const i of this.pending) pos = applyInput(pos, i, this.grid);
     const correction = { x: pos.x - this.position.x, y: pos.y - this.position.y };
     this.position = pos;
     return correction;

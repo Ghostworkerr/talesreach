@@ -4,14 +4,13 @@ import {
   MAX_QUEUED_INPUTS,
   applyInput,
   TICK_RATE,
-  WORLD_HEIGHT,
-  WORLD_WIDTH,
   parseClientMessage,
   type ClientMessage,
   type ClientMessageType,
   type PendingInput,
 } from "@talesreach/shared";
 import { PlayerState, WorldState } from "./WorldState.js";
+import { START_MAP, loadMap } from "../world/maps.js";
 
 /** Number of placeholder colours the client knows how to draw. */
 const COLOUR_COUNT = 8;
@@ -34,6 +33,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   /** Highest input sequence number received per player (old/repeated ones are ignored). */
   private readonly lastSeq = new Map<string, number>();
   private joinCounter = 0;
+  /** The map this room plays on: walls block movement; spawn points place new players. */
+  readonly map = loadMap(START_MAP);
 
   override onCreate() {
     this.state = new WorldState();
@@ -64,9 +65,11 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     const player = new PlayerState();
     player.name = `Traveller ${this.joinCounter}`;
     player.colour = (this.joinCounter - 1) % COLOUR_COUNT;
-    // Spawn near the middle with a small spread so players don't stack exactly.
-    player.x = WORLD_WIDTH / 2 + (Math.random() - 0.5) * 96;
-    player.y = WORLD_HEIGHT / 2 + (Math.random() - 0.5) * 96;
+    // Arrive inside the Crossroads Inn, at one of the map's spawn points.
+    const spawns = this.map.points.filter((p) => p.type === "spawn");
+    const spot = spawns[(this.joinCounter - 1) % Math.max(1, spawns.length)];
+    player.x = spot?.x ?? this.map.pixelWidth / 2;
+    player.y = spot?.y ?? this.map.pixelHeight / 2;
     this.state.players.set(client.sessionId, player);
     this.queues.set(client.sessionId, []);
     this.lastSeq.set(client.sessionId, 0);
@@ -85,7 +88,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.state.players.forEach((player, sessionId) => {
       const input = this.queues.get(sessionId)?.shift();
       if (!input) return;
-      const next = applyInput(player, input);
+      const next = applyInput(player, input, this.map.grid);
       player.x = next.x;
       player.y = next.y;
       player.ack = input.seq;

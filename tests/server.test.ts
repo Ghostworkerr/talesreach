@@ -165,6 +165,21 @@ describe("abuse cases", () => {
     await room.leave();
   });
 
+  it("walls are solid on the server: walking into one stops you", async () => {
+    const room = await join();
+    await wait(100);
+    for (let i = 1; i <= 40; i++) {
+      room.send("input", { seq: i, x: 0, y: -1 });
+      await wait(MOVE_STEP_SECONDS * 1000);
+    }
+    await wait(200);
+    const me = playerIn(room, room.sessionId)!;
+    // The inn's north wall face ends at row 3 (y = 64); feet can't cross it.
+    expect(me.y).toBeGreaterThanOrEqual(64 + 3);
+    expect(me.ack).toBe(40);
+    await room.leave();
+  });
+
   it("ignores replayed or old inputs", async () => {
     const room = await join();
     await walk(room, { x: 1, y: 0 }, 3, 5);

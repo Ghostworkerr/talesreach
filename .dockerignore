@@ -7,4 +7,6 @@ client/*
 web
 tests
 docs
-assets
+assets/art
+assets/audio
+assets/ui

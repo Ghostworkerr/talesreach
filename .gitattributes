@@ -1,0 +1,6 @@
+# Store text with Unix line endings everywhere (the server builds on Linux).
+* text=auto eol=lf
+*.png binary
+*.mp3 binary
+*.ogg binary
+*.wav binary
