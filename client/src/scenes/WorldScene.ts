@@ -126,7 +126,9 @@ export class WorldScene extends Phaser.Scene {
     };
     say("The world is waking up…");
     try {
-      const room = await joinWorld();
+      const room = await joinWorld((secs) =>
+        say(`The world is waking up… (${secs}s — the free server sleeps when nobody plays, this can take a minute)`),
+      );
       this.room = room;
       say("Connected. Move with WASD / arrows, or drag on the left of the screen.");
       room.onMessage("pong", () => undefined);
@@ -137,7 +139,7 @@ export class WorldScene extends Phaser.Scene {
         say("Disconnected. Refresh to rejoin.");
       });
     } catch {
-      say("Could not reach the world. Is the server running?");
+      say("Could not reach the world. Please try again in a few minutes.");
     }
   }
 

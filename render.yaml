@@ -1,0 +1,16 @@
+# Render "Blueprint": tells Render how to build and run the game server.
+# The owner connects this repo once (New → Blueprint) and Render does the rest.
+services:
+  - type: web
+    name: talesreach-server
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build:server
+    startCommand: node server/dist/index.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "24"

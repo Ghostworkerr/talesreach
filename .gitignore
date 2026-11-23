@@ -4,6 +4,8 @@ dist/
 .env
 .env.*
 !.env.example
+# Public, non-secret client setting (the live server address)
+!client/.env.production
 coverage/
 .DS_Store
 Thumbs.db
