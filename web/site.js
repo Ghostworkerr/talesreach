@@ -27,3 +27,11 @@
   var ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone;
   if (ios && iosHint) iosHint.hidden = false;
 })();
+
+// The free game server sleeps when nobody plays and takes up to a minute to wake.
+// Start waking it as soon as someone opens the homepage, so it's ready when they press Play.
+try {
+  fetch("https://talesreach-server.onrender.com/health", { cache: "no-store", mode: "no-cors" }).catch(() => undefined);
+} catch {
+  // never block the page
+}
