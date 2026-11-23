@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Client, type Room } from "@colyseus/sdk";
+import { Client, CloseCode, type Room } from "@colyseus/sdk";
 import {
   MAX_MESSAGE_BYTES,
   MAX_QUEUED_INPUTS,
@@ -26,15 +26,19 @@ afterAll(async () => {
   await server.gracefullyShutdown(false);
 });
 
-/** Make a guest account (adult) and join the world with its token. */
-async function join() {
+/** Make a guest account (adult). */
+async function newToken() {
   const res = await fetch(`http://127.0.0.1:${PORT}/api/guest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ dob: "1990-05-17" }),
   });
-  const { token } = (await res.json()) as { token: string };
-  return new Client(`ws://127.0.0.1:${PORT}`).joinOrCreate(WORLD_ROOM, { token });
+  return ((await res.json()) as { token: string }).token;
+}
+
+/** Make a guest account (adult) and join the world with its token. */
+async function join(token?: string) {
+  return new Client(`ws://127.0.0.1:${PORT}`).joinOrCreate(WORLD_ROOM, { token: token ?? (await newToken()) });
 }
 
 function nextMessage<T = unknown>(room: Room, type: string, timeoutMs = 2000): Promise<T> {
@@ -114,6 +118,54 @@ describe("two players in one room", () => {
     await wait(150);
     expect(playerIn(b, a.sessionId)).toBeUndefined();
     await b.leave();
+  });
+});
+
+describe("reconnecting", () => {
+  it("a dropped connection comes back as the same player in the same place", async () => {
+    const room = await join();
+    const other = await join();
+    room.reconnection.minUptime = 0;
+    await walk(room, { x: 1, y: 0 }, 6);
+    await wait(200);
+    const before = { ...playerIn(room, room.sessionId)! };
+    const back = new Promise<void>((resolve) => room.onReconnect(() => resolve()));
+    // Simulate a phone losing signal for a moment.
+    (room as unknown as { connection: { close(code: number): void } }).connection.close(CloseCode.MAY_TRY_RECONNECT);
+    await wait(300);
+    // Meanwhile, the character is still in the world for everyone else.
+    expect(playerIn(other, room.sessionId)).toBeTruthy();
+    await back;
+    await wait(300);
+    expect(playerIn(room, room.sessionId)).toMatchObject({ x: before.x, y: before.y });
+    // And it still moves after reconnecting.
+    await walk(room, { x: -1, y: 0 }, 3, before.ack + 1);
+    await wait(200);
+    expect(playerIn(room, room.sessionId)!.x).toBeLessThan(before.x);
+    await room.leave();
+    await wait(200);
+    expect(playerIn(other, room.sessionId)).toBeUndefined(); // a real leave removes them at once
+    await other.leave();
+  });
+});
+
+describe("rejoining", () => {
+  it("joining again with the same account (e.g. a page reload) leaves no ghost behind", async () => {
+    const watcher = await join();
+    const token = await newToken();
+    const first = await join(token);
+    first.reconnection.enabled = false; // like a reloaded page: the old tab never comes back
+    (first as unknown as { connection: { close(code: number): void } }).connection.close(CloseCode.MAY_TRY_RECONNECT);
+    await wait(150);
+    const second = await join(token);
+    await wait(400);
+    const count = (watcher.state as { players: { size: number } }).players.size;
+    // The watcher and the rejoined player only: the dropped copy is gone at once.
+    expect(count).toBe(2);
+    expect(playerIn(watcher, first.sessionId)).toBeUndefined();
+    expect(playerIn(watcher, second.sessionId)).toBeTruthy();
+    await second.leave();
+    await watcher.leave();
   });
 });
 

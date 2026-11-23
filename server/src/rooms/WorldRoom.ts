@@ -1,4 +1,4 @@
-import { Room, ServerError, type Client } from "@colyseus/core";
+import { Room, ServerError, type Client, type Deferred } from "@colyseus/core";
 import {
   MAX_MESSAGES_PER_SECOND,
   MAX_QUEUED_INPUTS,
@@ -19,6 +19,9 @@ import { storedAppearance } from "../http/accounts.js";
 import { Social } from "./social.js";
 import { Inn } from "./inn.js";
 import { Npcs } from "./npcRoom.js";
+
+/** How long a dropped player's character waits for them to reconnect. */
+const RECONNECT_SECONDS = 30;
 
 /** Number of placeholder colours the client knows how to draw. */
 const COLOUR_COUNT = 8;
@@ -46,6 +49,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   /** Which session each account is playing in (one character per account at a time). */
   private readonly sessionsByAccount = new Map<string, string>();
   private readonly accountBySession = new Map<string, Account>();
+  /** Dropped players waiting to reconnect (cancelled if the same account joins again). */
+  private readonly waitingReconnect = new Map<string, Deferred<Client>>();
   /** Chat, parties, block and report. */
   private readonly social = new Social({
     position: (sid) => this.state.players.get(sid),
@@ -124,9 +129,13 @@ export class WorldRoom extends Room<{ state: WorldState }> {
 
   override async onJoin(client: Client, _options: unknown, account: Account) {
     this.joinCounter += 1;
-    // Same account joining again (another tab/device): the newer one wins.
+    // Same account joining again (another tab, device, or a page reload): the newer one wins.
     const previous = this.sessionsByAccount.get(account.id);
-    if (previous) this.clients.find((c) => c.sessionId === previous)?.leave(4001, "signed in elsewhere");
+    if (previous) {
+      const waiting = this.waitingReconnect.get(previous);
+      if (waiting) waiting.reject(new Error("joined again")); // its character leaves now, not in 30s
+      else this.clients.find((c) => c.sessionId === previous)?.leave(4001, "signed in elsewhere");
+    }
     this.sessionsByAccount.set(account.id, client.sessionId);
     this.accountBySession.set(client.sessionId, account);
     void getAccountStore().touch(account.id);
@@ -144,6 +153,23 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.queues.set(client.sessionId, []);
     this.lastSeq.set(client.sessionId, 0);
     this.state.playerCount = this.state.players.size;
+    await this.inn.sendWallet(client);
+  }
+
+  /** Connection dropped (phone locked, network blip): keep the character for a while so the player can reconnect. */
+  override onDrop(client: Client) {
+    this.queues.set(client.sessionId, []); // stand still while away
+    const waiting = this.allowReconnection(client, RECONNECT_SECONDS);
+    this.waitingReconnect.set(client.sessionId, waiting);
+    waiting.then(
+      () => this.waitingReconnect.delete(client.sessionId),
+      () => this.waitingReconnect.delete(client.sessionId),
+    );
+  }
+
+  /** Back after a drop: same character, same place. Re-attach chat/party and resend private info. */
+  override async onReconnect(client: Client) {
+    this.social.rebind(client);
     await this.inn.sendWallet(client);
   }
 

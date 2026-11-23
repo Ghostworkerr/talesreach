@@ -118,6 +118,7 @@ export class WorldScene extends Phaser.Scene {
   private zone: MapZone | undefined;
   private surface: Surface = "wood";
   private social: SocialUI | null = null;
+  private statusTimer = 0;
   private hud: Hud | null = null;
   private lighting: Lighting | null = null;
   /** Server clock minus local clock, so everyone shares one world time. */
@@ -135,6 +136,10 @@ export class WorldScene extends Phaser.Scene {
   }
 
   preload() {
+    const status = document.getElementById("status");
+    this.load.on(Phaser.Loader.Events.PROGRESS, (v: number) => {
+      if (status) status.textContent = `Loading the world… ${Math.round(v * 100)}%`;
+    });
     loadArt(this);
   }
 
@@ -278,9 +283,13 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private async connect() {
-    const say = (text: string) => {
+    const say = (text: string, fadeAfterMs = 0) => {
       const el = document.getElementById("status");
-      if (el) el.textContent = text;
+      if (!el) return;
+      el.textContent = text;
+      el.classList.remove("faded");
+      clearTimeout(this.statusTimer);
+      if (fadeAfterMs) this.statusTimer = window.setTimeout(() => el.classList.add("faded"), fadeAfterMs);
     };
     const uiRoot = document.getElementById("ui");
     const waiting = (secs: number) =>
@@ -312,7 +321,8 @@ export class WorldScene extends Phaser.Scene {
       }
       if (!room) throw new Error("could not sign in");
       this.room = room;
-      say("Welcome to the Crossroads Inn. Move with WASD / arrows, drag on the left, or tap where to go.");
+      say("Welcome to the Crossroads Inn!", 5000);
+      if (uiRoot) showHowToPlay(uiRoot);
       room.onMessage("pong", () => undefined);
       if (uiRoot) {
         const ui = this.scene.get("ui") as UIScene;
@@ -326,9 +336,18 @@ export class WorldScene extends Phaser.Scene {
       }
       room.onStateChange(() => this.onServerUpdate(room));
       if (uiRoot) this.hud = new Hud(uiRoot, room);
-      room.onLeave(() => {
+      // Phone locked or signal lost: the game reconnects by itself (the server keeps your place).
+      room.onDrop(() => say("Connection lost — reconnecting…"));
+      room.onReconnect(() => say("Reconnected!", 3000));
+      room.onLeave((code) => {
         this.room = null;
-        say("Disconnected. Refresh to rejoin.");
+        if (code === 4001) {
+          say("You're playing on another device or tab now.");
+          return;
+        }
+        // Couldn't reconnect in time: start fresh (you'll be back at the inn or your bed).
+        say("Connection lost — rejoining…");
+        setTimeout(() => location.reload(), 1500);
       });
     } catch {
       say("Could not reach the world. Please try again in a few minutes.");
@@ -423,6 +442,9 @@ export class WorldScene extends Phaser.Scene {
     this.draw(room, deltaMs);
     this.updateZone();
     this.updateWorld(deltaMs);
+    // Last: keep names from covering each other, then put speech bubbles above the names.
+    this.declutterLabels();
+    for (const a of this.avatars.values()) a.bubble?.setPosition(a.label.x, snap(a.label.y - a.label.height));
   }
 
   /** Which way to walk this step: keys/joystick win; otherwise follow a tap-to-move route. */
@@ -504,7 +526,26 @@ export class WorldScene extends Phaser.Scene {
       // Walk/idle animation, facing, depth and pixel snapping all happen in the view.
       a.view.update(pos.x, pos.y, deltaMs);
       a.label.setPosition(snap(pos.x), snap(pos.y - PLAYER_RADIUS - 6)).setDepth(DEPTH.labels);
-      a.bubble?.setPosition(snap(pos.x), snap(pos.y - PLAYER_RADIUS - 6 - a.label.height));
+    }
+  }
+
+  /** When people stand close, lift name labels so they don't cover each other. */
+  private declutterLabels() {
+    const labels = [...this.avatars.values()].map((a) => a.label).concat([...this.npcs.values()].map((n) => n.label));
+    labels.sort((a, b) => b.y - a.y); // lowest on screen first; others move up out of the way
+    const placed: Phaser.Geom.Rectangle[] = [];
+    for (const label of labels) {
+      const w = label.width;
+      const h = label.height;
+      let y = label.y;
+      for (let tries = 0; tries < 4; tries++) {
+        const box = new Phaser.Geom.Rectangle(label.x - w / 2, y - h, w, h);
+        const hit = placed.find((r) => Phaser.Geom.Intersects.RectangleToRectangle(r, box));
+        if (!hit) break;
+        y = hit.y - 0.5;
+      }
+      if (y !== label.y) label.setY(snap(y));
+      placed.push(new Phaser.Geom.Rectangle(label.x - w / 2, label.y - h, w, h));
     }
   }
 
@@ -637,4 +678,36 @@ function devHourShift(): number {
   if (!Number.isFinite(hour) || hour < 0 || hour >= 24 || !location.search.includes("hour=")) return 0;
   const now = worldTime(Date.now());
   return ((hour - (now.hour + now.minute / 60)) / 24) * WORLD_DAY_MS;
+}
+
+/** A one-time "how to play" card for new players (remembered on this device). */
+function showHowToPlay(root: HTMLElement) {
+  const KEY = "talesreach.seenHowTo";
+  try {
+    if (localStorage.getItem(KEY)) return;
+  } catch {
+    return;
+  }
+  const touch = matchMedia("(pointer: coarse)").matches;
+  const card = document.createElement("div");
+  card.className = "howto panel";
+  card.setAttribute("role", "dialog");
+  card.setAttribute("aria-label", "How to play");
+  card.innerHTML = `<h3>How to play</h3>
+    <ul>
+      <li>${touch ? "<b>Walk:</b> drag your thumb on the left side, or tap where you want to go." : "<b>Walk:</b> WASD or arrow keys, or click where you want to go."}</li>
+      <li><b>Talk:</b> walk up to someone and press the button that appears${touch ? "" : " (or E)"}.</li>
+      <li><b>Chat:</b> 💬 ${touch ? "button" : "button or Enter"}. Tap a player to invite, mute, block or report.</li>
+      <li><b>Rest:</b> rent a room from Marta the innkeeper to wake up in your own bed.</li>
+    </ul>
+    <button class="btn" type="button">Got it!</button>`;
+  root.append(card);
+  card.querySelector("button")!.addEventListener("click", () => {
+    try {
+      localStorage.setItem(KEY, "1");
+    } catch {
+      // storage blocked: the card may show again next time
+    }
+    card.remove();
+  });
 }

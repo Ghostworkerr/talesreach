@@ -70,6 +70,12 @@ export class Social {
     return pid;
   }
 
+  /** A player reconnected (new connection object, same session): send to the new one. */
+  rebind(client: Client) {
+    const p = this.players.get(client.sessionId);
+    if (p) p.client = client;
+  }
+
   remove(sessionId: string) {
     const p = this.players.get(sessionId);
     if (!p) return;

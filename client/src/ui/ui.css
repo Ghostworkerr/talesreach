@@ -276,3 +276,14 @@
 .dialog .options .btn { min-height: 42px; font-size: 14px; padding: 0 14px; }
 #settings .links { text-align: center; margin-top: 12px; font-size: 13px; }
 #settings .links a { color: var(--wood); }
+
+/* Status line fades away after a while; how-to-play card */
+#status { transition: opacity 600ms ease; }
+#status.faded { opacity: 0; }
+.howto {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 24px)); border-width: 16px; padding: 0 8px; animation: pop-in 180ms ease-out;
+}
+.howto h3 { margin: 0 0 6px; font: 700 18px Georgia, serif; color: var(--wood); }
+.howto ul { margin: 0 0 10px; padding-left: 18px; font-size: 14px; line-height: 1.5; }
+.howto .btn { width: 100%; }
