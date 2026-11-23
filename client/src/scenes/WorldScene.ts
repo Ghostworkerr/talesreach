@@ -46,10 +46,31 @@ interface PlayerView extends Appearance {
 }
 interface WorldView {
   serverMs: number;
+  bardSong: number;
+  bardSongSeq: number;
+  npcs: { forEach(cb: (n: NpcView, id: string) => void): void };
   players: {
     forEach(cb: (p: PlayerView, id: string) => void): void;
     get(id: string): PlayerView | undefined;
   };
+}
+
+interface NpcView {
+  name: string;
+  title: string;
+  frame: number;
+  x: number;
+  y: number;
+  activity: string;
+}
+interface NpcAvatar {
+  view: CharacterView;
+  label: Phaser.GameObjects.Text;
+  interp: Interpolator;
+  name: string;
+  activity: string;
+  /** Countdown to the next floating effect (music notes, zzz). */
+  fx: number;
 }
 
 interface Avatar {
@@ -78,12 +99,6 @@ const LIGHT_TILES: Record<number, { radius: number; strength: number; flicker: n
   14: { radius: 78, strength: 1, flicker: 0.09 }, // hearth fire
   476: { radius: 44, strength: 0.9, flicker: 0.05 }, // candelabra
 };
-/** Inn staff stand at their map spots (they get daily routines and dialogue in task 1.7). */
-const STAFF: Record<string, { frame: number; title: string }> = {
-  innkeeper: { frame: 433, title: "Innkeeper" },
-  server: { frame: 325, title: "Server" },
-  bard: { frame: 379, title: "Bard" },
-};
 
 export class WorldScene extends Phaser.Scene {
   private room: Room | null = null;
@@ -111,7 +126,9 @@ export class WorldScene extends Phaser.Scene {
   private clockTimer = 0;
   /** Development only: `?hour=22` jumps the clock to that hour to check day/night. */
   private readonly devTimeShift = devHourShift();
-  private readonly staff: { name: string; view: CharacterView; label: Phaser.GameObjects.Text; x: number; y: number }[] = [];
+  /** NPCs (inn staff) as the server reports them. */
+  private readonly npcs = new Map<string, NpcAvatar>();
+  private bardSongSeq = -1;
 
   constructor() {
     super("world");
@@ -158,24 +175,6 @@ export class WorldScene extends Phaser.Scene {
     }
     this.lighting = new Lighting(this, lights, DEPTH.lighting);
 
-    // Inn staff at their posts, breathing idly.
-    for (const pt of this.map.points.filter((p) => p.type === "npc")) {
-      const who = STAFF[pt.name];
-      if (!who) continue;
-      const view = new CharacterView(this, { key: SHEETS.chars.key, frame: who.frame }, pt.x, pt.y, false);
-      const label = this.add
-        .text(snap(pt.x), snap(pt.y - PLAYER_RADIUS - 6), who.title, {
-          fontFamily: "system-ui, sans-serif",
-          fontSize: "10px",
-          color: "#ffe3a3",
-          stroke: "#000000",
-          strokeThickness: 3,
-        })
-        .setOrigin(0.5, 1)
-        .setDepth(DEPTH.labels)
-        .setResolution(WORLD_ZOOM);
-      this.staff.push({ name: pt.name, view, label, x: pt.x, y: pt.y });
-    }
   }
 
   private hookTaps() {
@@ -400,6 +399,14 @@ export class WorldScene extends Phaser.Scene {
       }
     });
 
+    this.syncNpcs(state, now);
+    // Someone tipped the bard: everyone in the inn hears the requested song.
+    if (state.bardSongSeq !== this.bardSongSeq) {
+      const first = this.bardSongSeq === -1;
+      this.bardSongSeq = state.bardSongSeq;
+      if (!first && this.zone?.props.mood === "tavern") audio.playSong("tavern", state.bardSong);
+    }
+
     for (const [id, a] of this.avatars) {
       if (seen.has(id)) continue;
       a.view.destroy();
@@ -501,12 +508,66 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private syncNpcs(state: WorldView, now: number) {
+    state.npcs?.forEach((n, id) => {
+      let a = this.npcs.get(id);
+      if (!a) {
+        const view = new CharacterView(this, { key: SHEETS.chars.key, frame: n.frame }, n.x, n.y, false);
+        const label = this.add
+          .text(snap(n.x), snap(n.y - PLAYER_RADIUS - 6), `${n.name} · ${n.title}`, {
+            fontFamily: "system-ui, sans-serif",
+            fontSize: "10px",
+            color: "#ffe3a3",
+            stroke: "#000000",
+            strokeThickness: 3,
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(DEPTH.labels)
+          .setResolution(WORLD_ZOOM);
+        a = { view, label, interp: new Interpolator(150), name: n.name, activity: n.activity, fx: 0 };
+        this.npcs.set(id, a);
+      }
+      a.activity = n.activity;
+      a.interp.add(now, { x: n.x, y: n.y });
+    });
+  }
+
+  /** NPCs walk (with the walk cycle) and show what they're doing: music while performing, zzz while asleep. */
+  private updateNpcs(deltaMs: number) {
+    const now = performance.now();
+    for (const a of this.npcs.values()) {
+      const pos = a.interp.sample(now);
+      if (!pos) continue;
+      a.view.update(pos.x, pos.y, deltaMs);
+      a.label.setPosition(snap(pos.x), snap(pos.y - PLAYER_RADIUS - 6));
+      a.fx -= deltaMs;
+      if (a.fx > 0) continue;
+      if (a.activity === "performing") {
+        a.fx = 700 + Math.random() * 500;
+        this.floatSymbol(pos.x + (Math.random() - 0.5) * 10, pos.y - 14, Math.random() < 0.5 ? "♪" : "♫", "#ffe3a3");
+      } else if (a.activity === "sleeping") {
+        a.fx = 1400;
+        this.floatSymbol(pos.x + 5, pos.y - 14, "z", "#cfe0ff");
+      }
+    }
+  }
+
+  /** A small symbol that drifts up and fades (music notes, sleep). */
+  private floatSymbol(x: number, y: number, text: string, colour: string) {
+    const t = this.add
+      .text(x, y, text, { fontFamily: "serif", fontSize: "9px", color: colour, stroke: "#000000", strokeThickness: 2 })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.labels - 1)
+      .setResolution(WORLD_ZOOM);
+    this.tweens.add({ targets: t, y: y - 14, x: x + (Math.random() - 0.5) * 8, alpha: 0, duration: 1800, ease: "Sine.easeOut", onComplete: () => t.destroy() });
+  }
+
   /** Clock, lighting, staff idling, and the action button for whatever is close by. */
   private updateWorld(deltaMs: number) {
     const time = worldTime(Date.now() + this.serverOffset + this.devTimeShift);
     const me = this.predictor?.position ?? null;
     this.lighting?.update(deltaMs, time.darkness, me, this.zone?.props.mood === "tavern");
-    for (const s of this.staff) s.view.update(s.x, s.y, deltaMs);
+    this.updateNpcs(deltaMs);
     // Night falls: outdoor music changes (the inn keeps its own tunes).
     const night = time.darkness > 0.5;
     if (night !== this.night) {
@@ -520,12 +581,17 @@ export class WorldScene extends Phaser.Scene {
     }
     if (me && this.hud) {
       let best: { name: string; label: string; d: number } | null = null;
+      // People first: talk to whoever is closest.
+      for (const [id, a] of this.npcs) {
+        const d = Math.hypot(a.view.root.x - me.x, a.view.root.y - me.y);
+        if (d > INTERACT_RANGE - 4 || (best && d >= best.d)) continue;
+        best = { name: id, label: `Talk to ${a.name}`, d };
+      }
       for (const p of this.map.points) {
-        if (p.type !== "npc" && p.type !== "inn_room") continue;
-        if (p.type === "npc" && p.name !== "innkeeper") continue; // the others talk in task 1.7
+        if (p.type !== "inn_room") continue;
         const d = Math.hypot(p.x - me.x, p.y - me.y);
         if (d > INTERACT_RANGE - 4 || (best && d >= best.d)) continue;
-        const label = p.name === "innkeeper" ? "Talk to the innkeeper" : this.hud.wallet.roomUntil > Date.now() + this.serverOffset ? "Your room" : "Inn room";
+        const label = this.hud.wallet.roomUntil > Date.now() + this.serverOffset ? "Your room" : "Inn room";
         best = { name: p.name, label, d };
       }
       this.hud.setAction(best);

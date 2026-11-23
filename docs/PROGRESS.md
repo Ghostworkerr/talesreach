@@ -34,8 +34,8 @@ next. Updated after every task.
 | 1.4 Character creator | done | opening cutscene + creator (8 options, animated preview, random look/name), unique filtered names |
 | 1.5 Chat + safety | done | local (in earshot) + party chat, bubbles, filters, mute/block/report, admin queue at /admin |
 | 1.6 World clock + inn rooms | done | 2-hour days, seasons, lighting with flickering lights; coins, room rental, beds, chest; economy log |
-| 1.7 NPCs | next | |
-| 1.8 Homepage + PWA | todo | |
+| 1.7 NPCs | done | Marta (innkeeper), Tobin (server), Lark (bard): daily routines, walking, dialogue, song tips |
+| 1.8 Homepage + PWA | next | |
 | Phase 1 gate | waiting for owner | 10 friends, 30 min, phones + PCs |
 
 ## Waiting for the owner
@@ -60,3 +60,4 @@ next. Updated after every task.
 - 2026-11-23: Fix — Render had stopped deploying since 1.3: the in-memory Postgres (PGlite) made the server use ~470–510 MB at start-up, at the free plan's 512 MB limit. Without a DATABASE_URL the server now uses a light in-memory account store (~220 MB total); PGlite is only used in tests to check the SQL. A shared contract test runs against both stores. 74 tests.
 - 2026-11-23: Verified live after the fix: under-13 refused, guest + profile + join work, join without token refused, chat filtered.
 - 2026-11-23: 1.6 done — server world clock (2 real-hour days, weekly seasons, fixed start date so restarts don't reset it); dusk/night lighting with flickering torches, candles and hearth, your own small glow; night music outdoors; HUD clock + coins. Economy: 20 starting coins, innkeeper rents rooms (5 coins per world day, extends), rest in your bed to wake there, room chest for coins; every coin change in a locked transaction + append-only economy log; double-spend test on both stores. 87 tests.
+- 2026-11-23: 1.7 done — server-run NPCs with daily routines by world hour (Marta tends the bar / rests by the hearth; Tobin serves tables / rests; Lark wanders the courtyard by day, performs every evening, sleeps late), walking with the walk cycle on collision-checked routes; dialogue by time of day, activity and how often you've chatted; rumours; tip the bard 1 coin to change the inn's song for everyone (logged). Music notes and zzz effects. 94 tests.

@@ -18,6 +18,7 @@ import type { Account } from "../db/store.js";
 import { storedAppearance } from "../http/accounts.js";
 import { Social } from "./social.js";
 import { Inn } from "./inn.js";
+import { Npcs } from "./npcRoom.js";
 
 /** Number of placeholder colours the client knows how to draw. */
 const COLOUR_COUNT = 8;
@@ -50,16 +51,28 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     position: (sid) => this.state.players.get(sid),
     reject: (client, reason) => this.reject(client, reason),
   });
-  /** The inn: innkeeper, room rental, beds and chests. */
+  /** The inn: room rental, beds and chests. */
   private readonly inn = new Inn({
     map: this.map,
     position: (sid) => this.state.players.get(sid),
     account: (sid) => this.accountBySession.get(sid),
     reject: (client, reason) => this.reject(client, reason),
+    npcPosition: (id) => this.npcs?.position(id),
   });
+  /** Inn staff with daily routines and dialogue (created once the state exists). */
+  private npcs: Npcs | null = null;
 
   override onCreate() {
     this.state = new WorldState();
+    this.npcs = new Npcs({
+      map: this.map,
+      state: this.state,
+      position: (sid) => this.state.players.get(sid),
+      account: (sid) => this.accountBySession.get(sid),
+      isRented: (accountId) => this.inn.isRented(accountId),
+      reject: (client, reason) => this.reject(client, reason),
+      broadcast: (type, msg) => this.broadcast(type, msg),
+    });
 
     this.handle("ping", (client, msg) => {
       client.send("pong", { n: msg.n });
@@ -81,7 +94,10 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.handle("partyInvite", (client, msg) => this.social.partyInvite(client, msg));
     this.handle("partyRespond", (client, msg) => this.social.partyRespond(client, msg));
     this.handle("partyLeave", (client) => this.social.partyLeave(client));
-    this.handle("interact", (client, msg) => void this.inn.interact(client, msg));
+    this.handle("interact", (client, msg) =>
+      void (this.npcs?.has(msg.target) ? this.npcs.talk(client, msg.target) : this.inn.useRoom(client, msg.target)),
+    );
+    this.handle("requestSong", (client, msg) => void this.npcs?.requestSong(client, msg));
     this.handle("rentRoom", (client) => void this.inn.rentRoom(client));
     this.handle("rest", (client, msg) => void this.inn.rest(client, msg));
     this.handle("chest", (client, msg) => void this.inn.chest(client, msg));
@@ -142,8 +158,9 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.state.playerCount = this.state.players.size;
   }
 
-  /** Advance the world one tick: apply at most one queued input per player. */
+  /** Advance the world one tick: apply at most one queued input per player; NPCs go about their day. */
   tick() {
+    this.npcs?.update(1 / TICK_RATE);
     this.state.players.forEach((player, sessionId) => {
       const input = this.queues.get(sessionId)?.shift();
       if (!input) return;

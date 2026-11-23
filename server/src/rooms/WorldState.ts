@@ -20,10 +20,25 @@ export class PlayerState extends Schema {
   @type("uint32") ack = 0;
 }
 
+/** An NPC as every client sees it (behaviour and schedules stay on the server). */
+export class NpcState extends Schema {
+  @type("string") name = "";
+  @type("string") title = "";
+  @type("uint16") frame = 0;
+  @type("float32") x = 0;
+  @type("float32") y = 0;
+  /** What they're doing: working, serving, resting, performing, wandering, sleeping. */
+  @type("string") activity = "";
+}
+
 /** State the server shares with every client in the world room. */
 export class WorldState extends Schema {
   @type("uint16") playerCount = 0;
   /** Server clock (epoch ms), refreshed every second: everyone shares one world time. */
   @type("float64") serverMs = Date.now();
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
+  @type({ map: NpcState }) npcs = new MapSchema<NpcState>();
+  /** The bard's current song (index into BARD_SONGS) and a counter that changes on each request. */
+  @type("uint8") bardSong = 0;
+  @type("uint16") bardSongSeq = 0;
 }

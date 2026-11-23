@@ -93,6 +93,7 @@ class AudioManager {
   private mood: Mood | null = null;
   private trackIndex = 0;
   private music: AnySound | null = null;
+  private currentKey = "";
   private ambience = new Map<AmbienceLayer, { sound: AnySound | null; level: number }>();
   private listeners = new Set<(s: AudioSettings) => void>();
 
@@ -115,7 +116,14 @@ class AudioManager {
     this.playTrack();
   }
 
-  private playTrack() {
+  /** Play a specific track of a mood (e.g. the bard's requested song), even if the mood is already playing. */
+  playSong(mood: Mood, index: number) {
+    this.mood = mood;
+    this.trackIndex = index;
+    this.playTrack(true);
+  }
+
+  private playTrack(force = false) {
     const scene = this.scene;
     const mood = this.mood;
     if (!scene || !mood || scene.sound.locked) return;
@@ -124,6 +132,8 @@ class AudioManager {
     const key = `music:${url}`;
     this.withAudio(key, url, () => {
       if (this.mood !== mood) return; // mood changed while loading
+      if (!force && this.music && this.currentKey === key) return;
+      this.currentKey = key;
       const loop = list.length === 1;
       const next = scene.sound.add(key, { loop, volume: 0 }) as AnySound;
       if (!loop) {

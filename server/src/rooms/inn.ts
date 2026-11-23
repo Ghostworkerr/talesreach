@@ -14,6 +14,8 @@ interface RoomHooks {
   position(sessionId: string): { x: number; y: number } | undefined;
   account(sessionId: string): Account | undefined;
   reject(client: Client, reason: string): void;
+  /** Where an NPC is right now (NPCs walk around). */
+  npcPosition(id: string): { x: number; y: number } | undefined;
 }
 
 /**
@@ -32,6 +34,17 @@ export class Inn {
     return Math.hypot(p.x - me.x, p.y - me.y) <= INTERACT_RANGE ? p : undefined;
   }
 
+  /** Close enough to talk to the innkeeper, wherever she is right now. */
+  private nearInnkeeper(client: Client): boolean {
+    const keeper = this.room.npcPosition("innkeeper");
+    const me = this.room.position(client.sessionId);
+    return !!keeper && !!me && Math.hypot(keeper.x - me.x, keeper.y - me.y) <= INTERACT_RANGE;
+  }
+
+  async isRented(accountId: string): Promise<boolean> {
+    return (await getAccountStore().wallet(accountId)).roomUntil > Date.now();
+  }
+
   async sendWallet(client: Client): Promise<Wallet | undefined> {
     const account = this.room.account(client.sessionId);
     if (!account) return undefined;
@@ -47,53 +60,38 @@ export class Inn {
     return this.room.map.points.find((p) => p.name === w.restPoint && p.type === "inn_room");
   }
 
-  async interact(client: Client, msg: ClientMessage<"interact">) {
+  /** Using an inn room (bed + chest). Talking to people goes through the NPC system. */
+  async useRoom(client: Client, pointName: string) {
     const account = this.room.account(client.sessionId);
     if (!account) return;
-    const target = this.near(client, msg.target, ["npc", "inn_room"]);
+    const target = this.near(client, pointName, ["inn_room"]);
     if (!target) return this.room.reject(client, "too far");
     const w = await getAccountStore().wallet(account.id);
-    const rented = w.roomUntil > Date.now();
-    if (target.name === "innkeeper") {
-      const greeting = account.name ? `Welcome back, ${account.name}!` : "Welcome, traveller!";
-      const text = rented
-        ? `${greeting} Your room's ready whenever you need it — another night is ${ROOM_PRICE} coins if you'd like to stay longer.`
-        : `${greeting} A warm bed, a chest for your coins, and you'll wake here safe and sound. ${ROOM_PRICE} coins a night.`;
-      const options: DialogOption[] = [
-        { id: "rentRoom", label: rented ? `Stay another night (${ROOM_PRICE} coins)` : `Rent a room (${ROOM_PRICE} coins)` },
-        { id: "bye", label: "Maybe later" },
-      ];
-      client.send("dialog", { speaker: "Innkeeper", point: "innkeeper", text, options });
-    } else if (target.type === "inn_room") {
-      if (!rented) {
-        client.send("dialog", {
-          speaker: "Inn room",
-          point: target.name,
-          text: "A cosy room with a soft bed and a sturdy chest. Rent a room from the innkeeper to use it.",
-          options: [{ id: "bye", label: "OK" }],
-        });
-        return;
-      }
+    if (w.roomUntil <= Date.now()) {
       client.send("dialog", {
-        speaker: "Your room",
+        speaker: "Inn room",
         point: target.name,
-        text: `Your bed and chest. You have ${w.coins} coins on you and ${w.chest} in the chest.`,
-        options: [
-          { id: `rest:${target.name}`, label: w.restPoint === target.name ? "Rest (this is your bed)" : "Rest here — wake up here" },
-          { id: "chest", label: "Open the chest" },
-          { id: "bye", label: "Leave" },
-        ],
+        text: "A cosy room with a soft bed and a sturdy chest. Rent a room from the innkeeper to use it.",
+        options: [{ id: "bye", label: "OK" }],
       });
-    } else {
-      // Other NPCs (task 1.7) answer through the NPC system.
-      this.room.reject(client, "nothing to do");
+      return;
     }
+    client.send("dialog", {
+      speaker: "Your room",
+      point: target.name,
+      text: `Your bed and chest. You have ${w.coins} coins on you and ${w.chest} in the chest.`,
+      options: [
+        { id: `rest:${target.name}`, label: w.restPoint === target.name ? "Rest (this is your bed)" : "Rest here — wake up here" },
+        { id: "chest", label: "Open the chest" },
+        { id: "bye", label: "Leave" },
+      ],
+    });
   }
 
   async rentRoom(client: Client) {
     const account = this.room.account(client.sessionId);
     if (!account) return;
-    if (!this.near(client, "innkeeper", ["npc"])) return this.room.reject(client, "too far");
+    if (!this.nearInnkeeper(client)) return this.room.reject(client, "too far");
     const result = await getAccountStore().rentRoom(account.id, ROOM_PRICE, Date.now());
     if (result !== "ok") return this.room.reject(client, "not enough coins");
     client.send("notice", { text: `You rented a room for ${ROOM_PRICE} coins. Rest in your bed to wake up there.` });

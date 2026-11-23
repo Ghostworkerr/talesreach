@@ -67,6 +67,18 @@ async function walkTo(p: P, target: { x: number; y: number }) {
   await wait(200);
 }
 
+const npcAt = (p: P, id: string) => (p.room.state as { npcs: { get(id: string): { x: number; y: number } } }).npcs.get(id);
+
+/** Walk up to an NPC (they move about, so check and follow until close enough). */
+async function walkToNpc(p: P, id: string) {
+  for (let tries = 0; tries < 4; tries++) {
+    const npc = npcAt(p, id);
+    await walkTo(p, npc);
+    const now = npcAt(p, id);
+    if (Math.hypot(now.x - me(p).x, now.y - me(p).y) < 34) return;
+  }
+}
+
 describe("the inn", () => {
   it("you start with a few coins, and the innkeeper rents you a room", async () => {
     const p = await newPlayer();
@@ -78,13 +90,12 @@ describe("the inn", () => {
     await wait(200);
     expect(rejections(p).filter((r) => r === "too far").length).toBe(2);
 
-    // Walk up to the bar.
-    const keeper = point("innkeeper");
-    await walkTo(p, { x: keeper.x, y: keeper.y + 32 });
+    // Walk up to the innkeeper.
+    await walkToNpc(p, "innkeeper");
     p.room.send("interact", { target: "innkeeper" });
     await wait(200);
     const dialog = last(p, "dialog") as { speaker: string; options: { id: string }[] };
-    expect(dialog.speaker).toBe("Innkeeper");
+    expect(dialog.speaker).toMatch(/Innkeeper/);
     expect(dialog.options.map((o) => o.id)).toContain("rentRoom");
 
     const before = Date.now();
@@ -96,6 +107,7 @@ describe("the inn", () => {
 
     // Spend down to zero, then the innkeeper says no.
     for (let i = 0; i < 4; i++) {
+      await walkToNpc(p, "innkeeper");
       p.room.send("rentRoom", {});
       await wait(150);
     }
@@ -106,8 +118,7 @@ describe("the inn", () => {
 
   it("rest in your bed, use the chest, and wake up there next time", async () => {
     const p = await newPlayer();
-    const keeper = point("innkeeper");
-    await walkTo(p, { x: keeper.x, y: keeper.y + 32 });
+    await walkToNpc(p, "innkeeper");
     p.room.send("rentRoom", {});
     await wait(200);
 

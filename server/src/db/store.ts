@@ -57,6 +57,8 @@ export interface AccountStore {
   moveChestCoins(accountId: string, amount: number): Promise<CoinResult>;
   setRestPoint(accountId: string, point: string | null): Promise<void>;
   economyLog(accountId: string): Promise<EconomyEntry[]>;
+  /** Pay coins for something (a song, a drink...). Never goes below zero. */
+  spend(accountId: string, amount: number, reason: string): Promise<CoinResult>;
 }
 
 const toWallet = (a: Account): Wallet => ({
@@ -134,6 +136,18 @@ export class SqlAccountStore implements AccountStore {
 
   async setRestPoint(accountId: string, point: string | null) {
     await this.db.update(accounts).set({ restPoint: point }).where(eq(accounts.id, accountId));
+  }
+
+  async spend(accountId: string, amount: number, reason: string): Promise<CoinResult> {
+    if (!Number.isInteger(amount) || amount <= 0) return "empty";
+    return this.db.transaction(async (tx) => {
+      const [a] = await tx.select().from(accounts).where(eq(accounts.id, accountId)).for("update");
+      if (!a || a.coins < amount) return "poor";
+      const coins = a.coins - amount;
+      await tx.update(accounts).set({ coins }).where(eq(accounts.id, accountId));
+      await tx.insert(economyLog).values({ accountId, coinsDelta: -amount, chestDelta: 0, coinsAfter: coins, chestAfter: a.chestCoins, reason });
+      return "ok";
+    });
   }
 
   async economyLog(accountId: string): Promise<EconomyEntry[]> {
@@ -294,6 +308,15 @@ export class MemoryAccountStore implements AccountStore {
   async setRestPoint(accountId: string, point: string | null) {
     const a = this.accounts.get(accountId);
     if (a) a.restPoint = point;
+  }
+
+  async spend(accountId: string, amount: number, reason: string): Promise<CoinResult> {
+    if (!Number.isInteger(amount) || amount <= 0) return "empty";
+    const a = this.accounts.get(accountId);
+    if (!a || a.coins < amount) return "poor";
+    a.coins -= amount;
+    this.addLog(a, -amount, 0, reason);
+    return "ok";
   }
 
   async economyLog(accountId: string) {

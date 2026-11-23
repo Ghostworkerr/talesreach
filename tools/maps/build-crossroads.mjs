@@ -186,6 +186,13 @@ point("bard", "npc", 22, 12);
 point("room_a", "inn_room", 8, 5);
 point("room_b", "inn_room", 8, 13);
 point("fireplace", "light", 17, 4);
+// NPC routine spots (task 1.7): where each member of staff goes during the day.
+for (const [name, x, y] of [
+  ["innkeeper_bar_1", 27, 5], ["innkeeper_bar_2", 31, 5], ["innkeeper_kegs", 29, 5], ["innkeeper_hearth", 19, 5],
+  ["server_table_1", 19, 9], ["server_table_2", 24, 11], ["server_table_3", 29, 12], ["server_table_4", 19, 14],
+  ["server_bar", 30, 7], ["server_rest", 32, 11],
+  ["bard_stage", 22, 12], ["bard_garden_1", 10, 21], ["bard_garden_2", 30, 21], ["bard_crossroads", 24, 23], ["bard_room", 9, 14],
+]) point(name, "npc_spot", x, y);
 // zones: what music/ambience plays and what you walk on
 const zone = (name, tx, ty, tw, th, props) =>
   objects.push({

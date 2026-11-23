@@ -116,6 +116,7 @@ export class Hud {
     else if (id.startsWith("rest:")) this.room.send("rest", { point: id.slice(5) });
     else if (id === "chest") this.openChest();
     else if (id.startsWith("say:")) this.room.send("interact", { target: id.slice(4) });
+    else if (id.startsWith("song:")) this.room.send("requestSong", { song: Number(id.slice(5)) });
   }
 
   closeDialog() {

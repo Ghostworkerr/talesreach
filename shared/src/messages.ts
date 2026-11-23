@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ChestMessage, InteractMessage, RestMessage } from "./economy.js";
+import { ChestMessage, InteractMessage, RestMessage, SongRequestMessage } from "./economy.js";
 import { BlockMessage, ChatMessage, EmptyMessage, PartyInviteMessage, PartyRespondMessage, ReportMessage } from "./chat.js";
 
 /**
@@ -43,6 +43,7 @@ export const ClientMessageSchemas = {
   rentRoom: EmptyMessage,
   rest: RestMessage,
   chest: ChestMessage,
+  requestSong: SongRequestMessage,
 } as const;
 
 export type ClientMessageType = keyof typeof ClientMessageSchemas;
