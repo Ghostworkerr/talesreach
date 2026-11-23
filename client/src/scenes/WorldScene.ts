@@ -11,6 +11,9 @@ import {
   stepMovement,
   zoneAt,
   type Appearance,
+  INTERACT_RANGE,
+  WORLD_DAY_MS,
+  worldTime,
   type GameMap,
   type MapZone,
   type Vec2,
@@ -23,6 +26,8 @@ import { playCutscene, type CutsceneStep } from "../ui/cutscene";
 import { ApiError } from "../account";
 import { SocialUI } from "../ui/social";
 import { DPR } from "../display";
+import { Lighting, type LightSource } from "../lighting";
+import { Hud } from "../ui/hud";
 import { WORLD_ZOOM } from "../display";
 import { MAPS, SHEETS, loadArt } from "../art";
 import { dollKey, dollTexture } from "../doll";
@@ -40,6 +45,7 @@ interface PlayerView extends Appearance {
   ack: number;
 }
 interface WorldView {
+  serverMs: number;
   players: {
     forEach(cb: (p: PlayerView, id: string) => void): void;
     get(id: string): PlayerView | undefined;
@@ -63,7 +69,21 @@ const STEP_PX = PLAYER_SPEED * MOVE_STEP_SECONDS;
 /** After a hiccup, catch up at most this many steps in one frame (keeps us under the server's rate limit). */
 const MAX_STEPS_PER_FRAME = 2;
 /** Draw order: map layers below characters, tree tops above, names on top of everything. */
-const DEPTH = { ground: 0, walls: 1, decor: 2, furniture: 3, above: 100_000, labels: 200_000, marker: 2.5 } as const;
+const DEPTH = { ground: 0, walls: 1, decor: 2, furniture: 3, above: 100_000, lighting: 150_000, labels: 200_000, marker: 2.5 } as const;
+
+/** Map tiles that give light at night (Kenney RPG sheet ids + 1 = gid): radius, strength, flicker. */
+const LIGHT_TILES: Record<number, { radius: number; strength: number; flicker: number }> = {
+  417: { radius: 56, strength: 1, flicker: 0.07 }, // wall torch
+  419: { radius: 26, strength: 0.85, flicker: 0.12 }, // candle
+  14: { radius: 78, strength: 1, flicker: 0.09 }, // hearth fire
+  476: { radius: 44, strength: 0.9, flicker: 0.05 }, // candelabra
+};
+/** Inn staff stand at their map spots (they get daily routines and dialogue in task 1.7). */
+const STAFF: Record<string, { frame: number; title: string }> = {
+  innkeeper: { frame: 433, title: "Innkeeper" },
+  server: { frame: 325, title: "Server" },
+  bard: { frame: 379, title: "Bard" },
+};
 
 export class WorldScene extends Phaser.Scene {
   private room: Room | null = null;
@@ -83,6 +103,15 @@ export class WorldScene extends Phaser.Scene {
   private zone: MapZone | undefined;
   private surface: Surface = "wood";
   private social: SocialUI | null = null;
+  private hud: Hud | null = null;
+  private lighting: Lighting | null = null;
+  /** Server clock minus local clock, so everyone shares one world time. */
+  private serverOffset = 0;
+  private night = false;
+  private clockTimer = 0;
+  /** Development only: `?hour=22` jumps the clock to that hour to check day/night. */
+  private readonly devTimeShift = devHourShift();
+  private readonly staff: { name: string; view: CharacterView; label: Phaser.GameObjects.Text; x: number; y: number }[] = [];
 
   constructor() {
     super("world");
@@ -118,6 +147,35 @@ export class WorldScene extends Phaser.Scene {
     layer("Furniture", DEPTH.furniture);
     layer("Above", DEPTH.above);
     this.map = parseTiledMap(this.cache.tilemap.get(MAPS.crossroads.key).data);
+
+    // Lights: every torch, candle and hearth on the map.
+    const lights: LightSource[] = [];
+    for (const name of ["Walls", "Decor", "Furniture"]) {
+      tm.getLayer(name)?.tilemapLayer?.forEachTile((tile) => {
+        const l = LIGHT_TILES[tile.index];
+        if (l) lights.push({ x: tile.pixelX + 8, y: tile.pixelY + 8, ...l, seed: lights.length * 1.7 });
+      });
+    }
+    this.lighting = new Lighting(this, lights, DEPTH.lighting);
+
+    // Inn staff at their posts, breathing idly.
+    for (const pt of this.map.points.filter((p) => p.type === "npc")) {
+      const who = STAFF[pt.name];
+      if (!who) continue;
+      const view = new CharacterView(this, { key: SHEETS.chars.key, frame: who.frame }, pt.x, pt.y, false);
+      const label = this.add
+        .text(snap(pt.x), snap(pt.y - PLAYER_RADIUS - 6), who.title, {
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "10px",
+          color: "#ffe3a3",
+          stroke: "#000000",
+          strokeThickness: 3,
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH.labels)
+        .setResolution(WORLD_ZOOM);
+      this.staff.push({ name: pt.name, view, label, x: pt.x, y: pt.y });
+    }
   }
 
   private hookTaps() {
@@ -268,6 +326,7 @@ export class WorldScene extends Phaser.Scene {
         });
       }
       room.onStateChange(() => this.onServerUpdate(room));
+      if (uiRoot) this.hud = new Hud(uiRoot, room);
       room.onLeave(() => {
         this.room = null;
         say("Disconnected. Refresh to rejoin.");
@@ -311,6 +370,7 @@ export class WorldScene extends Phaser.Scene {
   private onServerUpdate(room: Room) {
     const state = room.state as WorldView | undefined;
     if (!state?.players) return;
+    if (state.serverMs) this.serverOffset = state.serverMs - Date.now();
     const now = performance.now();
     const seen = new Set<string>();
 
@@ -355,6 +415,7 @@ export class WorldScene extends Phaser.Scene {
     this.stepInput(room, deltaMs);
     this.draw(room, deltaMs);
     this.updateZone();
+    this.updateWorld(deltaMs);
   }
 
   /** Which way to walk this step: keys/joystick win; otherwise follow a tap-to-move route. */
@@ -440,6 +501,37 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** Clock, lighting, staff idling, and the action button for whatever is close by. */
+  private updateWorld(deltaMs: number) {
+    const time = worldTime(Date.now() + this.serverOffset + this.devTimeShift);
+    const me = this.predictor?.position ?? null;
+    this.lighting?.update(deltaMs, time.darkness, me, this.zone?.props.mood === "tavern");
+    for (const s of this.staff) s.view.update(s.x, s.y, deltaMs);
+    // Night falls: outdoor music changes (the inn keeps its own tunes).
+    const night = time.darkness > 0.5;
+    if (night !== this.night) {
+      this.night = night;
+      this.zone = undefined; // re-pick music for the current place
+    }
+    this.clockTimer -= deltaMs;
+    if (this.clockTimer <= 0) {
+      this.clockTimer = 1000;
+      this.hud?.setTime(time);
+    }
+    if (me && this.hud) {
+      let best: { name: string; label: string; d: number } | null = null;
+      for (const p of this.map.points) {
+        if (p.type !== "npc" && p.type !== "inn_room") continue;
+        if (p.type === "npc" && p.name !== "innkeeper") continue; // the others talk in task 1.7
+        const d = Math.hypot(p.x - me.x, p.y - me.y);
+        if (d > INTERACT_RANGE - 4 || (best && d >= best.d)) continue;
+        const label = p.name === "innkeeper" ? "Talk to the innkeeper" : this.hud.wallet.roomUntil > Date.now() + this.serverOffset ? "Your room" : "Inn room";
+        best = { name: p.name, label, d };
+      }
+      this.hud.setAction(best);
+    }
+  }
+
   /** Music, ambience and footstep sound follow where you are (inside the inn or outdoors). */
   private updateZone() {
     const me = this.predictor?.position;
@@ -447,7 +539,8 @@ export class WorldScene extends Phaser.Scene {
     const zone = zoneAt(this.map, me.x, me.y);
     if (zone === this.zone) return;
     this.zone = zone;
-    const mood = (zone?.props.mood as Mood | undefined) ?? "day";
+    const zoneMood = (zone?.props.mood as Mood | undefined) ?? "day";
+    const mood: Mood = zoneMood === "day" && this.night ? "night" : zoneMood;
     const amb = (zone?.props.ambience as AmbienceLayer | undefined) ?? "forest";
     this.surface = (zone?.props.surface as Surface | undefined) ?? "grass";
     audio.setMood(mood);
@@ -469,4 +562,13 @@ export class WorldScene extends Phaser.Scene {
       .setResolution(WORLD_ZOOM);
     return { view, pid: p.pid, name: p.name, look: dollKey(p), label, interp: new Interpolator(100) };
   }
+}
+
+/** Development builds only: shift the clock so `?hour=H` is the current world hour. */
+function devHourShift(): number {
+  if (!import.meta.env.DEV) return 0;
+  const hour = Number(new URLSearchParams(location.search).get("hour"));
+  if (!Number.isFinite(hour) || hour < 0 || hour >= 24 || !location.search.includes("hour=")) return 0;
+  const now = worldTime(Date.now());
+  return ((hour - (now.hour + now.minute / 60)) / 24) * WORLD_DAY_MS;
 }

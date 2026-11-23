@@ -14,6 +14,26 @@ export const accounts = pgTable("accounts", {
   saveCodeHash: text("save_code_hash").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Coins carried, and coins kept in the inn-room chest. Changed only in transactions, always logged. */
+  coins: integer("coins").notNull().default(0),
+  chestCoins: integer("chest_coins").notNull().default(0),
+  /** The inn room is rented until this moment (null = no room). */
+  roomUntil: timestamp("room_until", { withTimezone: true }),
+  /** Which bed the player last rested in (they wake there while the room is rented). */
+  restPoint: text("rest_point"),
+});
+
+/** Append-only record of every coin change (CLAUDE.md security rules). Never updated or deleted. */
+export const economyLog = pgTable("economy_log", {
+  id: serial("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  /** Change to coins carried and to the chest (either may be 0). */
+  coinsDelta: integer("coins_delta").notNull(),
+  chestDelta: integer("chest_delta").notNull(),
+  coinsAfter: integer("coins_after").notNull(),
+  chestAfter: integer("chest_after").notNull(),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** Device logins: each device holds a random secret; we store only its SHA-256. */
@@ -88,4 +108,19 @@ export const CREATE_TABLES = [
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
   sql`CREATE INDEX IF NOT EXISTS reports_status_idx ON reports(status, created_at)`,
+  sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS coins integer NOT NULL DEFAULT 0`,
+  sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS chest_coins integer NOT NULL DEFAULT 0`,
+  sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS room_until timestamptz`,
+  sql`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS rest_point text`,
+  sql`CREATE TABLE IF NOT EXISTS economy_log (
+    id serial PRIMARY KEY,
+    account_id text NOT NULL,
+    coins_delta integer NOT NULL,
+    chest_delta integer NOT NULL,
+    coins_after integer NOT NULL,
+    chest_after integer NOT NULL,
+    reason text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  sql`CREATE INDEX IF NOT EXISTS economy_log_account_idx ON economy_log(account_id, id)`,
 ];

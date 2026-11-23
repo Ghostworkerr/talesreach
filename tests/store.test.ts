@@ -64,3 +64,49 @@ describe.each(engines)("account store: %s", (_name, open) => {
     expect((await s.listReports("resolved")).some((r) => r.id === r1.id)).toBe(true);
   });
 });
+
+describe.each(engines)("economy: %s", (_name, open) => {
+  const store = async (): Promise<AccountStore> => (await open()).store;
+  const DAY = 2 * 60 * 60 * 1000;
+
+  it("starting purse, renting and the chest are all logged and add up", async () => {
+    const s = await store();
+    const { account } = await s.createGuest("1990-01-02");
+    expect(await s.wallet(account.id)).toMatchObject({ coins: 20, chest: 0, roomUntil: 0 });
+    const now = Date.now();
+    expect(await s.rentRoom(account.id, 5, now)).toBe("ok");
+    expect((await s.wallet(account.id)).roomUntil).toBe(now + DAY);
+    expect(await s.rentRoom(account.id, 5, now)).toBe("ok"); // extends from the end of the current rental
+    expect((await s.wallet(account.id)).roomUntil).toBe(now + 2 * DAY);
+    expect(await s.moveChestCoins(account.id, 4)).toBe("ok");
+    expect(await s.moveChestCoins(account.id, -10)).toBe("empty");
+    expect(await s.moveChestCoins(account.id, 7)).toBe("poor");
+    expect(await s.moveChestCoins(account.id, 0)).toBe("empty");
+    expect(await s.wallet(account.id)).toMatchObject({ coins: 6, chest: 4 });
+    const log = await s.economyLog(account.id);
+    expect(log.map((e) => e.reason)).toEqual(["starting_purse", "rent_room", "rent_room", "chest_deposit"]);
+    // The log adds up to the balance.
+    expect(log.reduce((sum, e) => sum + e.coinsDelta, 0)).toBe(6);
+    expect(log.reduce((sum, e) => sum + e.chestDelta, 0)).toBe(4);
+    expect(log.at(-1)).toMatchObject({ coinsAfter: 6, chestAfter: 4 });
+  });
+
+  it("two purchases at the same moment can't spend the same coins", async () => {
+    const s = await store();
+    const { account } = await s.createGuest("1990-01-02");
+    // 20 coins, rooms cost 15: only one of two simultaneous rentals may succeed.
+    const results = await Promise.all([s.rentRoom(account.id, 15, Date.now()), s.rentRoom(account.id, 15, Date.now())]);
+    expect(results.sort()).toEqual(["ok", "poor"]);
+    expect((await s.wallet(account.id)).coins).toBe(5);
+    const moves = await Promise.all([s.moveChestCoins(account.id, 5), s.moveChestCoins(account.id, 5)]);
+    expect(moves.sort()).toEqual(["ok", "poor"]);
+    expect(await s.wallet(account.id)).toMatchObject({ coins: 0, chest: 5 });
+  });
+
+  it("rest points are remembered", async () => {
+    const s = await store();
+    const { account } = await s.createGuest("1990-01-02");
+    await s.setRestPoint(account.id, "room_a");
+    expect((await s.wallet(account.id)).restPoint).toBe("room_a");
+  });
+});

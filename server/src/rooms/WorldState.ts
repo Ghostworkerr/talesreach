@@ -23,5 +23,7 @@ export class PlayerState extends Schema {
 /** State the server shares with every client in the world room. */
 export class WorldState extends Schema {
   @type("uint16") playerCount = 0;
+  /** Server clock (epoch ms), refreshed every second: everyone shares one world time. */
+  @type("float64") serverMs = Date.now();
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
 }

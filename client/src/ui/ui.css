@@ -251,3 +251,24 @@
 .report .note { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
 .report textarea { font: 15px system-ui, sans-serif; border: 2px solid #b08b5e; border-radius: 6px; padding: 6px; background: #fbf3e2; resize: vertical; }
 @keyframes line-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* HUD: clock + coins, action button, dialogs, chest */
+.hud {
+  position: absolute; top: calc(10px + var(--safe-top)); left: calc(10px + var(--safe-left));
+  display: flex; gap: 10px; align-items: center; border-width: 10px; padding: 0 4px;
+  font: 600 13px/1.2 system-ui, sans-serif; color: var(--ink); white-space: nowrap;
+}
+.hud-coins { display: inline-block; font-variant-numeric: tabular-nums; }
+.party-box { top: calc(58px + var(--safe-top)); }
+.action-btn {
+  position: absolute; right: calc(10px + var(--safe-right)); bottom: calc(68px + var(--safe-bottom));
+  min-height: 52px; font-size: 15px; padding: 0 16px; max-width: 46vw;
+}
+.dialog {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(12px + var(--safe-bottom));
+  width: min(560px, calc(100vw - 24px)); border-width: 14px; padding: 0 6px; animation: pop-in 160ms ease-out;
+}
+.dialog .speaker { display: inline-block; font: 700 15px/1 Georgia, serif; color: var(--wood); margin-bottom: 4px; }
+.dialog .line, .dialog p { margin: 4px 0 8px; font-size: 15px; line-height: 1.45; }
+.dialog .options { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.dialog .options .btn { min-height: 42px; font-size: 14px; padding: 0 14px; }

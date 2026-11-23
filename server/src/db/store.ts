@@ -1,11 +1,13 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, desc, eq, or } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { SAVE_CODE_ALPHABET } from "@talesreach/shared";
-import { CREATE_TABLES, accounts, blocks, reports, sessions } from "./schema.js";
+import { SAVE_CODE_ALPHABET, STARTING_COINS, WORLD_DAY_MS, type Wallet } from "@talesreach/shared";
+import { CREATE_TABLES, accounts, blocks, economyLog, reports, sessions } from "./schema.js";
 
 export type Account = typeof accounts.$inferSelect;
 export type Report = typeof reports.$inferSelect;
+export type EconomyEntry = typeof economyLog.$inferSelect;
+export type CoinResult = "ok" | "poor" | "empty";
 
 /** Public player id (shown to other players for mute/block/report/invite); never the account id. */
 export const publicId = (accountId: string) => createHash("sha256").update(`pid:${accountId}`).digest("hex").slice(0, 12);
@@ -46,7 +48,27 @@ export interface AccountStore {
   setReportStatus(id: number, status: string): Promise<void>;
   /** Save name + appearance. Returns false if another character already has that name. */
   setProfile(accountId: string, name: string, appearance: string): Promise<boolean>;
+
+  // --- economy: every change is atomic and written to the economy log ---
+  wallet(accountId: string): Promise<Wallet>;
+  /** Pay for one more world day of inn room (from now, or from the end of the current rental). */
+  rentRoom(accountId: string, price: number, nowMs: number): Promise<CoinResult>;
+  /** Move coins between purse and chest: positive = put in the chest, negative = take out. */
+  moveChestCoins(accountId: string, amount: number): Promise<CoinResult>;
+  setRestPoint(accountId: string, point: string | null): Promise<void>;
+  economyLog(accountId: string): Promise<EconomyEntry[]>;
 }
+
+const toWallet = (a: Account): Wallet => ({
+  coins: a.coins,
+  chest: a.chestCoins,
+  roomUntil: a.roomUntil?.getTime() ?? 0,
+  restPoint: a.restPoint,
+});
+
+/** The new room end time: one world day from now, or from the end of a rental still running. */
+const extendRoom = (current: Date | null, nowMs: number) =>
+  new Date(Math.max(nowMs, current?.getTime() ?? 0) + WORLD_DAY_MS);
 
 /**
  * Accounts in SQL (Drizzle): real Postgres when DATABASE_URL is set, or the
@@ -59,13 +81,63 @@ export class SqlAccountStore implements AccountStore {
     for (const statement of CREATE_TABLES) await this.db.execute(statement);
   }
 
-  /** Create a guest account and return it with its first device token. */
+  /** Create a guest account (with the starting purse, logged) and return it with its first device token. */
   async createGuest(dob: string): Promise<{ account: Account; token: string }> {
     const id = randomUUID();
     const token = newToken();
-    const [account] = await this.db.insert(accounts).values({ id, dob }).returning();
-    await this.db.insert(sessions).values({ tokenHash: sha256(token), accountId: id });
-    return { account: account!, token };
+    const account = await this.db.transaction(async (tx) => {
+      const [row] = await tx.insert(accounts).values({ id, dob, coins: STARTING_COINS }).returning();
+      await tx.insert(sessions).values({ tokenHash: sha256(token), accountId: id });
+      await tx.insert(economyLog).values({
+        accountId: id, coinsDelta: STARTING_COINS, chestDelta: 0, coinsAfter: STARTING_COINS, chestAfter: 0, reason: "starting_purse",
+      });
+      return row!;
+    });
+    return { account, token };
+  }
+
+  async wallet(accountId: string): Promise<Wallet> {
+    const [a] = await this.db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1);
+    return a ? toWallet(a) : { coins: 0, chest: 0, roomUntil: 0, restPoint: null };
+  }
+
+  async rentRoom(accountId: string, price: number, nowMs: number): Promise<CoinResult> {
+    return this.db.transaction(async (tx) => {
+      // Lock the row: two requests at once can never spend the same coins.
+      const [a] = await tx.select().from(accounts).where(eq(accounts.id, accountId)).for("update");
+      if (!a || a.coins < price) return "poor";
+      const coins = a.coins - price;
+      await tx.update(accounts).set({ coins, roomUntil: extendRoom(a.roomUntil, nowMs) }).where(eq(accounts.id, accountId));
+      await tx.insert(economyLog).values({
+        accountId, coinsDelta: -price, chestDelta: 0, coinsAfter: coins, chestAfter: a.chestCoins, reason: "rent_room",
+      });
+      return "ok";
+    });
+  }
+
+  async moveChestCoins(accountId: string, amount: number): Promise<CoinResult> {
+    if (!Number.isInteger(amount) || amount === 0) return "empty";
+    return this.db.transaction(async (tx) => {
+      const [a] = await tx.select().from(accounts).where(eq(accounts.id, accountId)).for("update");
+      if (!a) return "poor";
+      if (amount > 0 && a.coins < amount) return "poor";
+      if (amount < 0 && a.chestCoins < -amount) return "empty";
+      const coins = a.coins - amount;
+      const chest = a.chestCoins + amount;
+      await tx.update(accounts).set({ coins, chestCoins: chest }).where(eq(accounts.id, accountId));
+      await tx.insert(economyLog).values({
+        accountId, coinsDelta: -amount, chestDelta: amount, coinsAfter: coins, chestAfter: chest, reason: amount > 0 ? "chest_deposit" : "chest_withdraw",
+      });
+      return "ok";
+    });
+  }
+
+  async setRestPoint(accountId: string, point: string | null) {
+    await this.db.update(accounts).set({ restPoint: point }).where(eq(accounts.id, accountId));
+  }
+
+  async economyLog(accountId: string): Promise<EconomyEntry[]> {
+    return this.db.select().from(economyLog).where(eq(economyLog.accountId, accountId)).orderBy(economyLog.id);
   }
 
   async byToken(token: string): Promise<Account | undefined> {
@@ -170,14 +242,62 @@ export class MemoryAccountStore implements AccountStore {
   private readonly blocks = new Set<string>(); // "a|b": a blocked b
   private readonly reports: Report[] = [];
   private nextReport = 1;
+  private readonly log: EconomyEntry[] = [];
+  private nextLog = 1;
 
   async createGuest(dob: string) {
     const now = new Date();
-    const account: Account = { id: randomUUID(), dob, name: "", appearance: "{}", saveCodeHash: null, createdAt: now, lastSeenAt: now };
+    const account: Account = {
+      id: randomUUID(), dob, name: "", appearance: "{}", saveCodeHash: null, createdAt: now, lastSeenAt: now,
+      coins: STARTING_COINS, chestCoins: 0, roomUntil: null, restPoint: null,
+    };
     this.accounts.set(account.id, account);
+    this.addLog(account, STARTING_COINS, 0, "starting_purse");
     const token = newToken();
     this.sessions.set(sha256(token), account.id);
     return { account: { ...account }, token };
+  }
+
+  // Coin changes happen synchronously here (no await in between), so they are atomic in Node.
+  private addLog(a: Account, coinsDelta: number, chestDelta: number, reason: string) {
+    this.log.push({
+      id: this.nextLog++, accountId: a.id, coinsDelta, chestDelta, coinsAfter: a.coins, chestAfter: a.chestCoins, reason, createdAt: new Date(),
+    });
+  }
+
+  async wallet(accountId: string) {
+    const a = this.accounts.get(accountId);
+    return a ? toWallet(a) : { coins: 0, chest: 0, roomUntil: 0, restPoint: null };
+  }
+
+  async rentRoom(accountId: string, price: number, nowMs: number): Promise<CoinResult> {
+    const a = this.accounts.get(accountId);
+    if (!a || a.coins < price) return "poor";
+    a.coins -= price;
+    a.roomUntil = extendRoom(a.roomUntil, nowMs);
+    this.addLog(a, -price, 0, "rent_room");
+    return "ok";
+  }
+
+  async moveChestCoins(accountId: string, amount: number): Promise<CoinResult> {
+    const a = this.accounts.get(accountId);
+    if (!Number.isInteger(amount) || amount === 0) return "empty";
+    if (!a) return "poor";
+    if (amount > 0 && a.coins < amount) return "poor";
+    if (amount < 0 && a.chestCoins < -amount) return "empty";
+    a.coins -= amount;
+    a.chestCoins += amount;
+    this.addLog(a, -amount, amount, amount > 0 ? "chest_deposit" : "chest_withdraw");
+    return "ok";
+  }
+
+  async setRestPoint(accountId: string, point: string | null) {
+    const a = this.accounts.get(accountId);
+    if (a) a.restPoint = point;
+  }
+
+  async economyLog(accountId: string) {
+    return this.log.filter((e) => e.accountId === accountId).map((e) => ({ ...e }));
   }
 
   async byToken(token: string) {

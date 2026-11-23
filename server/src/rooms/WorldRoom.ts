@@ -17,6 +17,7 @@ import { getAccountStore } from "../services.js";
 import type { Account } from "../db/store.js";
 import { storedAppearance } from "../http/accounts.js";
 import { Social } from "./social.js";
+import { Inn } from "./inn.js";
 
 /** Number of placeholder colours the client knows how to draw. */
 const COLOUR_COUNT = 8;
@@ -49,6 +50,13 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     position: (sid) => this.state.players.get(sid),
     reject: (client, reason) => this.reject(client, reason),
   });
+  /** The inn: innkeeper, room rental, beds and chests. */
+  private readonly inn = new Inn({
+    map: this.map,
+    position: (sid) => this.state.players.get(sid),
+    account: (sid) => this.accountBySession.get(sid),
+    reject: (client, reason) => this.reject(client, reason),
+  });
 
   override onCreate() {
     this.state = new WorldState();
@@ -73,6 +81,10 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.handle("partyInvite", (client, msg) => this.social.partyInvite(client, msg));
     this.handle("partyRespond", (client, msg) => this.social.partyRespond(client, msg));
     this.handle("partyLeave", (client) => this.social.partyLeave(client));
+    this.handle("interact", (client, msg) => void this.inn.interact(client, msg));
+    this.handle("rentRoom", (client) => void this.inn.rentRoom(client));
+    this.handle("rest", (client, msg) => void this.inn.rest(client, msg));
+    this.handle("chest", (client, msg) => void this.inn.chest(client, msg));
 
     // Any message type we don't know about is refused.
     this.onMessage("*", (client, type) => {
@@ -80,6 +92,8 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     });
 
     this.setSimulationInterval(() => this.tick(), 1000 / TICK_RATE);
+    // Share the server clock once a second (clients run the world clock from it).
+    this.clock.setInterval(() => (this.state.serverMs = Date.now()), 1000);
   }
 
   /** Only players with a valid device token (from the account API) may enter. */
@@ -104,9 +118,9 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     player.name = account.name || `Traveller ${this.joinCounter}`;
     Object.assign(player, storedAppearance(account) ?? DEFAULT_APPEARANCE);
     player.colour = (this.joinCounter - 1) % COLOUR_COUNT;
-    // Arrive inside the Crossroads Inn, at one of the map's spawn points.
+    // Wake in your rented bed, or arrive inside the Crossroads Inn at a spawn point.
     const spawns = this.map.points.filter((p) => p.type === "spawn");
-    const spot = spawns[(this.joinCounter - 1) % Math.max(1, spawns.length)];
+    const spot = (await this.inn.wakePoint(account)) ?? spawns[(this.joinCounter - 1) % Math.max(1, spawns.length)];
     player.x = spot?.x ?? this.map.pixelWidth / 2;
     player.y = spot?.y ?? this.map.pixelHeight / 2;
     player.pid = await this.social.add(client, account, player.name);
@@ -114,6 +128,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.queues.set(client.sessionId, []);
     this.lastSeq.set(client.sessionId, 0);
     this.state.playerCount = this.state.players.size;
+    await this.inn.sendWallet(client);
   }
 
   override onLeave(client: Client) {

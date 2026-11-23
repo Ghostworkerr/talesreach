@@ -35,7 +35,7 @@ reached, with simple step-by-step instructions written for a non-programmer on a
 - [x] 1.4 Character creator (body, hair, colours, outfit from the pack).
 - [x] 1.5 Local + party chat, profanity filter, contact-info filter for minors, mute,
       block, report → admin queue. Abuse tests.
-- [ ] 1.6 Server world clock: day/night (2 real hours) with lighting; inn rooms to rent
+- [x] 1.6 Server world clock: day/night (2 real hours) with lighting; inn rooms to rent
       (safe logout, storage chest, respawn).
 - [ ] 1.7 NPCs with schedules (innkeeper, server, bard) and simple dialogue.
 - [ ] 1.8 Homepage on `web/` with real text ("Talesreach — free browser MMORPG, no download"),
