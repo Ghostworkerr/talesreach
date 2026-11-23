@@ -1,7 +1,8 @@
 import Phaser from "phaser";
-import { BootScene } from "./scenes/BootScene";
+import { UIScene } from "./scenes/UIScene";
+import { WorldScene } from "./scenes/WorldScene";
 
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
   backgroundColor: "#1b1611",
@@ -11,5 +12,10 @@ new Phaser.Game({
     height: window.innerHeight,
   },
   pixelArt: true,
-  scene: [BootScene],
+  scene: [WorldScene, UIScene],
 });
+
+// Development only: lets automated checks drive the game. Stripped from production builds.
+if (import.meta.env.DEV) {
+  (window as unknown as { __talesreachGame: Phaser.Game }).__talesreachGame = game;
+}

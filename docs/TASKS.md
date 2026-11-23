@@ -12,7 +12,7 @@ reached, with simple step-by-step instructions written for a non-programmer on a
 ## Phase 0 — Foundations
 - [x] 0.1 Set up the monorepo: `shared/`, `server/` (Node + Colyseus), `client/` (Phaser 4 +
       Vite + TypeScript), `web/`, `tests/`, lint + test scripts, Dockerfile for the server.
-- [ ] 0.2 Two browser tabs see each other's placeholder character move in one room.
+- [x] 0.2 Two browser tabs see each other's placeholder character move in one room.
 - [ ] 0.3 Server-authoritative movement with client prediction and smoothing. Abuse tests:
       fake teleport, speed hack and oversized/garbage messages are all rejected.
 - [ ] 0.4 Find and choose the art family (see CLAUDE.md asset rules): one CC0/CC-BY pack

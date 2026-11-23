@@ -13,8 +13,20 @@ export const PingMessage = z
   })
   .strict();
 
+/**
+ * "input": which way the player wants to walk, as a direction (each axis -1..1).
+ * Never a position — the server works out where the player ends up.
+ */
+export const InputMessage = z
+  .object({
+    x: z.number().min(-1).max(1),
+    y: z.number().min(-1).max(1),
+  })
+  .strict();
+
 export const ClientMessageSchemas = {
   ping: PingMessage,
+  input: InputMessage,
 } as const;
 
 export type ClientMessageType = keyof typeof ClientMessageSchemas;
