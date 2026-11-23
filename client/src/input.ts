@@ -1,7 +1,11 @@
 import Phaser from "phaser";
 import type { Vec2 } from "@talesreach/shared";
+import { DPR } from "./display";
 
-const JOYSTICK_RADIUS = 56;
+/** Sizes in CSS pixels, converted to real screen pixels (the canvas draws at screen density). */
+const JOYSTICK_RADIUS = 56 * DPR;
+const KNOB_RADIUS = 24 * DPR;
+const DEAD_ZONE = 8 * DPR;
 
 /**
  * Turns WASD / arrow keys (PC) and a virtual joystick (phone) into a walking
@@ -25,8 +29,8 @@ export class MoveInput {
         }) as MoveInput["keys"])
       : null;
 
-    this.base = scene.add.circle(0, 0, JOYSTICK_RADIUS, 0xffffff, 0.12).setStrokeStyle(2, 0xffffff, 0.35);
-    this.knob = scene.add.circle(0, 0, 24, 0xffffff, 0.35);
+    this.base = scene.add.circle(0, 0, JOYSTICK_RADIUS, 0xffffff, 0.12).setStrokeStyle(2 * DPR, 0xffffff, 0.35);
+    this.knob = scene.add.circle(0, 0, KNOB_RADIUS, 0xffffff, 0.35);
     for (const o of [this.base, this.knob]) o.setScrollFactor(0).setDepth(1000).setVisible(false);
 
     scene.input.addPointer(2);
@@ -73,7 +77,7 @@ export class MoveInput {
     const ny = len > 0 ? dy / len : 0;
     this.knob.setPosition(this.origin.x + nx * clamped, this.origin.y + ny * clamped);
     // Small dead zone so a resting thumb doesn't drift.
-    const strength = clamped < 8 ? 0 : clamped / JOYSTICK_RADIUS;
+    const strength = clamped < DEAD_ZONE ? 0 : clamped / JOYSTICK_RADIUS;
     this.stick = { x: round(nx * strength), y: round(ny * strength) };
   }
 

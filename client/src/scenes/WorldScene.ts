@@ -4,12 +4,14 @@ import {
   Interpolator,
   MOVE_STEP_SECONDS,
   PLAYER_RADIUS,
+  stepMovement,
   Predictor,
   WORLD_HEIGHT,
   WORLD_WIDTH,
   type Vec2,
 } from "@talesreach/shared";
 import { joinWorld } from "../net";
+import { WORLD_ZOOM } from "../display";
 import { READY_MADE_CHARACTERS, RPG, SHEETS, TILE, loadArt } from "../art";
 import type { UIScene } from "./UIScene";
 
@@ -49,6 +51,8 @@ export class WorldScene extends Phaser.Scene {
   /** Visual offset that fades out so server corrections never look like a jump. */
   private correction: Vec2 = { x: 0, y: 0 };
   private accumulator = 0;
+  /** Direction used for the step in progress (for smooth drawing between steps). */
+  private stepDir: Vec2 = { x: 0, y: 0 };
 
   constructor() {
     super("world");
@@ -63,8 +67,8 @@ export class WorldScene extends Phaser.Scene {
     // The forest ring sits just outside the walkable field, so the camera may show it.
     const m = FOREST_MARGIN * TILE;
     this.cameras.main.setBounds(-m, -m, WORLD_WIDTH + m * 2, WORLD_HEIGHT + m * 2);
-    // 2x zoom keeps characters and names readable on a phone in landscape.
-    this.cameras.main.setZoom(2);
+    // 2x zoom (times screen density) keeps characters and names readable on a phone.
+    this.cameras.main.setZoom(WORLD_ZOOM);
     this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
     this.scene.launch("ui");
     void this.connect();
@@ -159,7 +163,7 @@ export class WorldScene extends Phaser.Scene {
         this.avatars.set(id, a);
         if (isMe) {
           this.predictor = new Predictor({ x: p.x, y: p.y });
-          this.cameras.main.startFollow(a.body, true, 0.2, 0.2);
+          this.cameras.main.startFollow(a.body, true, 1, 1);
         }
       }
       if (isMe && this.predictor) {
@@ -187,30 +191,43 @@ export class WorldScene extends Phaser.Scene {
     this.draw(room);
   }
 
-  /** Fixed-rate input: one message per server tick while you're moving. */
+  /**
+   * Fixed-rate input: one message per server tick while you're moving.
+   * Starts counting the moment you press, so movement begins at once.
+   */
   private stepInput(room: Room, deltaMs: number) {
     const predictor = this.predictor;
     const ui = this.scene.get("ui") as UIScene;
     if (!predictor || !ui.moveInput) return;
+    const dir = ui.moveInput.direction();
+    if (dir.x === 0 && dir.y === 0) {
+      // Let go: finish a step that was mostly done, so you don't slide back.
+      const wasMoving = this.stepDir.x !== 0 || this.stepDir.y !== 0;
+      if (wasMoving && this.accumulator >= STEP_MS / 2) room.send("input", predictor.push(this.stepDir));
+      this.accumulator = 0;
+      this.stepDir = { x: 0, y: 0 };
+      return;
+    }
+    this.stepDir = dir;
     this.accumulator = Math.min(this.accumulator + deltaMs, STEP_MS * MAX_STEPS_PER_FRAME);
     while (this.accumulator >= STEP_MS) {
       this.accumulator -= STEP_MS;
-      const dir = ui.moveInput.direction();
-      if (dir.x === 0 && dir.y === 0) continue;
       room.send("input", predictor.push(dir));
     }
   }
 
   private draw(room: Room) {
     const now = performance.now();
-    // Fade out any correction over a few frames.
+    // Fade out any server correction over a few frames.
     this.correction.x *= 0.8;
     this.correction.y *= 0.8;
     for (const [id, a] of this.avatars) {
       let pos: Vec2 | null;
       if (id === room.sessionId && this.predictor) {
-        const p = this.predictor.position;
-        pos = { x: p.x + this.correction.x, y: p.y + this.correction.y };
+        // Glide through the step in progress (drawn every frame, not just 20 times a second).
+        const base = this.predictor.position;
+        const ahead = stepMovement(base, this.stepDir, this.accumulator / 1000);
+        pos = { x: ahead.x + this.correction.x, y: ahead.y + this.correction.y };
       } else {
         pos = a.interp.sample(now);
       }
@@ -238,7 +255,7 @@ export class WorldScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 1)
       .setDepth(WORLD_HEIGHT + 1)
-      .setResolution(4);
+      .setResolution(WORLD_ZOOM);
     return { body, shadow, label, interp: new Interpolator(100) };
   }
 }
