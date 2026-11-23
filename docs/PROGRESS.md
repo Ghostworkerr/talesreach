@@ -14,7 +14,8 @@ next. Updated after every task.
   past them on the owner's instruction.
 
 ## Live
-- Game: https://talesreach.playtalesreach.workers.dev (Cloudflare Workers, auto-deploys from `main`)
+- Homepage: https://talesreach.playtalesreach.workers.dev (Cloudflare Workers, auto-deploys from `main`)
+- Game: https://talesreach.playtalesreach.workers.dev/play/
 - Server: https://talesreach-server.onrender.com (Render free, auto-deploys from `main`)
 - Repo: https://github.com/Ghostworkerr/talesreach
 
@@ -35,7 +36,7 @@ next. Updated after every task.
 | 1.5 Chat + safety | done | local (in earshot) + party chat, bubbles, filters, mute/block/report, admin queue at /admin |
 | 1.6 World clock + inn rooms | done | 2-hour days, seasons, lighting with flickering lights; coins, room rental, beds, chest; economy log |
 | 1.7 NPCs | done | Marta (innkeeper), Tobin (server), Lark (bard): daily routines, walking, dialogue, song tips |
-| 1.8 Homepage + PWA | next | |
+| 1.8 Homepage + PWA | done | homepage at /, game at /play/, rules, privacy, credits, installable app + offline cache |
 | Phase 1 gate | waiting for owner | 10 friends, 30 min, phones + PCs |
 
 ## Waiting for the owner
@@ -44,6 +45,8 @@ next. Updated after every task.
   are given in the chat when asked). Until then accounts live in memory; devices quietly re-register.
 - **Moderation page:** set a long random `ADMIN_TOKEN` (24+ characters) in Render's environment
   variables; then open https://talesreach-server.onrender.com/admin and enter it to see player reports.
+- **Privacy contact:** the privacy policy needs a contact address for data/deletion requests
+  (web/privacy.html says "coming soon"). Give an email to publish (not a personal one if you prefer).
 - **Email login (optional, later):** needs an email-sending service account (e.g. Resend). Save codes
   work without it.
 - Phase 1 gate playtest (after 1.8).
@@ -61,3 +64,4 @@ next. Updated after every task.
 - 2026-11-23: Verified live after the fix: under-13 refused, guest + profile + join work, join without token refused, chat filtered.
 - 2026-11-23: 1.6 done — server world clock (2 real-hour days, weekly seasons, fixed start date so restarts don't reset it); dusk/night lighting with flickering torches, candles and hearth, your own small glow; night music outdoors; HUD clock + coins. Economy: 20 starting coins, innkeeper rents rooms (5 coins per world day, extends), rest in your bed to wake there, room chest for coins; every coin change in a locked transaction + append-only economy log; double-spend test on both stores. 87 tests.
 - 2026-11-23: 1.7 done — server-run NPCs with daily routines by world hour (Marta tends the bar / rests by the hearth; Tobin serves tables / rests; Lark wanders the courtyard by day, performs every evening, sleeps late), walking with the walk cycle on collision-checked routes; dialogue by time of day, activity and how often you've chatted; rumours; tip the bard 1 coin to change the inn's song for everyone (logged). Music notes and zzz effects. 94 tests.
+- 2026-11-23: 1.8 done — homepage (real text, screenshots, Play button, Install button), rules, privacy policy (only what the game really stores), credits (every author), installable PWA (manifest, icons made from the game art, service worker: network-first pages/maps, cached art/sound). The game moved to /play/; settings link to the pages. 100 tests. **All Phase 1 tasks done; Phase 1 gate (10 friends, 30 min) waits for the owner.**

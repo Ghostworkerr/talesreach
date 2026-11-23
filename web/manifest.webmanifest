@@ -1,0 +1,19 @@
+{
+  "name": "Talesreach",
+  "short_name": "Talesreach",
+  "description": "A free MMORPG for phone and PC: live a life in a medieval fantasy world.",
+  "id": "/play/",
+  "start_url": "/play/",
+  "scope": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#1b1611",
+  "theme_color": "#1b1611",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

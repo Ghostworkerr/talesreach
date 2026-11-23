@@ -1,13 +1,84 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Talesreach — free browser MMORPG, no download</title>
-    <meta name="description" content="Talesreach is a free browser MMORPG for phone and PC. Live a life in a medieval fantasy world." />
-  </head>
-  <body>
-    <h1>Talesreach</h1>
-    <p>A free browser MMORPG for phone and PC — no download. Coming soon.</p>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Talesreach — free browser MMORPG, no download</title>
+  <meta name="description" content="Talesreach is a free MMORPG you play in your browser on phone or PC — no download. Live a life in a medieval fantasy world: adventure, farm, craft, trade, make friends at the Crossroads Inn." />
+  <meta name="theme-color" content="#1b1611" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta property="og:title" content="Talesreach — free browser MMORPG, no download" />
+  <meta property="og:description" content="Live a life in a medieval fantasy world, on your phone or PC. Free, no download." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/img/bard-evening.jpg" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="inner">
+      <a class="brand" href="/"><img src="/icons/icon-192.png" alt="" width="36" height="36" />Talesreach</a>
+      <nav aria-label="Site">
+        <a href="/play/">Play</a>
+        <a href="/rules.html">Rules</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/credits.html">Credits</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <div>
+        <h1 id="title">Talesreach</h1>
+        <p class="lead"><strong>A free browser MMORPG — no download.</strong> Step into the Crossroads Inn and live a life in a medieval fantasy world, on your phone or your PC.</p>
+        <div class="cta">
+          <a class="button" href="/play/">▶ Play now — it's free</a>
+          <button class="button secondary" id="install" type="button" hidden>⬇ Install on this device</button>
+        </div>
+        <p class="note">Works in your browser on phones, tablets and computers. Turn your phone sideways for the best view. Players must be 13 or older.</p>
+        <p class="note" id="ios-hint" hidden>On iPhone or iPad: tap <strong>Share</strong>, then <strong>Add to Home Screen</strong> to install.</p>
+      </div>
+      <img class="shot" src="/img/inn-at-night.jpg" alt="The Crossroads Inn at night: the hearth and wall torches glow, the innkeeper stands behind the bar." width="800" height="370" />
+    </section>
+
+    <h2>Live a life, not just a level</h2>
+    <p class="lead">You log in and you're <em>someone</em>. The innkeeper knows your name, the bard takes your requests, and every way of living is a real way to play.</p>
+    <div class="features">
+      <div class="card"><h3>⚔ Adventure</h3><p>Explore forests and ruins, fight monsters with real-time action combat, and earn bounties and titles.</p></div>
+      <div class="card"><h3>🌾 Farm &amp; craft</h3><p>Grow crops, raise animals, cook, brew and forge — and sell what you make to other players.</p></div>
+      <div class="card"><h3>🍺 Make friends</h3><p>Meet people at the inn, chat, form a party, rent a room and wake up by the fire.</p></div>
+      <div class="card"><h3>🌙 A living world</h3><p>Days pass and seasons turn. The inn staff keep their own routines, and the bard plays every evening.</p></div>
+      <div class="card"><h3>📱 Phone or PC</h3><p>Drag to walk or tap where to go on a phone; use WASD or click on a computer. Play together across devices.</p></div>
+      <div class="card"><h3>🛡 Safe &amp; fair</h3><p>No pay-to-win. Chat filters, mute, block and report keep the realm friendly. See the <a href="/rules.html">rules</a>.</p></div>
+    </div>
+
+    <h2>A look inside</h2>
+    <div class="gallery">
+      <figure>
+        <img class="shot" src="/img/bard-evening.jpg" alt="Evening at the inn: Lark the bard performs while Tobin the server works the tables." width="800" height="370" loading="lazy" />
+        <figcaption>Evening at the Crossroads Inn — tip the bard to choose the song.</figcaption>
+      </figure>
+      <figure>
+        <img class="shot" src="/img/creator.jpg" alt="The character creator: choose skin, build, hair, beard, headwear, outfit and a name." width="800" height="370" loading="lazy" />
+        <figcaption>Make your traveller: skin, build, hair, headwear and outfit.</figcaption>
+      </figure>
+    </div>
+
+    <h2>Where the tale is now</h2>
+    <p>Talesreach is being built in the open and updated often. Right now you can explore the Crossroads Inn and its courtyard, make your character, chat and form parties, rent a room, and meet the inn's staff. Combat, farming, crafting and the wider world are on their way.</p>
+    <p><a class="button" href="/play/">Enter the Crossroads Inn</a></p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <span>© Talesreach</span>
+      <a href="/rules.html">Rules</a>
+      <a href="/privacy.html">Privacy policy</a>
+      <a href="/credits.html">Credits</a>
+    </div>
+  </footer>
+  <script src="/site.js" defer></script>
+</body>
 </html>

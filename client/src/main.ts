@@ -20,6 +20,8 @@ const game = new Phaser.Game({
   },
   pixelArt: true,
   roundPixels: true,
+  // The game lives at /play/; art, sound and maps are served from the site root.
+  loader: { baseURL: "/" },
   scene: [WorldScene, UIScene],
 });
 
@@ -30,6 +32,11 @@ window.addEventListener("resize", () => {
   const s = canvasSize();
   game.scale.resize(s.width, s.height);
 });
+
+// Installable app + faster repeat visits (production only; the dev server reloads too often for caching).
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+}
 
 // Development only: lets automated checks drive the game. Stripped from production builds.
 if (import.meta.env.DEV) {

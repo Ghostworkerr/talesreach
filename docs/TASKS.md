@@ -38,7 +38,7 @@ reached, with simple step-by-step instructions written for a non-programmer on a
 - [x] 1.6 Server world clock: day/night (2 real hours) with lighting; inn rooms to rent
       (safe logout, storage chest, respawn).
 - [x] 1.7 NPCs with schedules (innkeeper, server, bard) and simple dialogue.
-- [ ] 1.8 Homepage on `web/` with real text ("Talesreach — free browser MMORPG, no download"),
+- [x] 1.8 Homepage on `web/` with real text ("Talesreach — free browser MMORPG, no download"),
       rules page, privacy policy, credits page. PWA install.
 - **Gate:** 10 friends hang out 30 minutes on phones and PCs without bugs.
 

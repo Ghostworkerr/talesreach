@@ -68,6 +68,10 @@ export function mountSettings(root: HTMLElement) {
   audio.onChange(render);
 
   panel.append(accountSection());
+  const links = document.createElement("p");
+  links.className = "note links";
+  links.innerHTML = `<a href="/rules.html" target="_blank" rel="noopener">Rules</a> · <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a> · <a href="/credits.html" target="_blank" rel="noopener">Credits</a> · <a href="/">Homepage</a>`;
+  panel.append(links);
 
   const setOpen = (open: boolean) => {
     panel.classList.toggle("open", open);

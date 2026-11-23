@@ -15,6 +15,8 @@
 }
 
 #ui button, #ui input, #ui .panel { pointer-events: auto; }
+/* The hidden attribute always wins over a component's own display style. */
+#ui [hidden] { display: none !important; }
 
 .panel {
   border: 18px solid transparent;
@@ -272,3 +274,5 @@
 .dialog .line, .dialog p { margin: 4px 0 8px; font-size: 15px; line-height: 1.45; }
 .dialog .options { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .dialog .options .btn { min-height: 42px; font-size: 14px; padding: 0 14px; }
+#settings .links { text-align: center; margin-top: 12px; font-size: 13px; }
+#settings .links a { color: var(--wood); }
