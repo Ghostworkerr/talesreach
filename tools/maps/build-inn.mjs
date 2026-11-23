@@ -1,4 +1,5 @@
-// Builds assets/maps/crossroads.tmj — the Crossroads Inn and its courtyard — as a Tiled map.
+// Builds assets/maps/inn.tmj — inside the Crossroads Inn — as a Tiled map (an interior: you enter it
+// through the inn's door in the Crossroads region, behind a short fade).
 // The same file is drawn by the client and used for collision by the server.
 // Run: node tools/maps/build-crossroads.mjs   (the result can also be opened and edited in Tiled)
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -6,10 +7,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const OUT = resolve(here, "../../assets/maps/crossroads.tmj");
+const OUT = resolve(here, "../../assets/maps/inn.tmj");
 
 const W = 40;
-const H = 30;
+const H = 20;
 const RPG_COLS = 57;
 const RPG_FIRST = 1;
 const INDOOR_FIRST = 1 + RPG_COLS * 31; // 1768
@@ -54,43 +55,14 @@ const clear = (x, y) => (L.collision[at(x, y)] = 0);
 let seed = 1337;
 const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
-// ---- outdoors: grass, crossroads, trees ----
-for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) put("ground", x, y, rpg(rnd() < 0.18 ? T.grassAlt : T.grass));
-// road south from the inn door, and an east-west road: the crossroads
-for (let y = 19; y < H; y++) for (let x = 19; x <= 20; x++) put("ground", x, y, rpg(T.dirt));
-for (let x = 0; x < W; x++) for (let y = 24; y <= 25; y++) put("ground", x, y, rpg(T.dirt));
-// signpost at the crossing
-put("furniture", 22, 23, rpg(T.signpost), true);
-put("furniture", 17, 26, rpg(T.signpostR), true);
-
-function tree(x, y, pine = rnd() < 0.5) {
-  put("furniture", x, y, rpg(pine ? T.pineTrunk : T.treeTrunk), true);
-  put("above", x, y - 1, rpg(pine ? T.pineTop : T.treeTop));
-}
-// tree line around the courtyard edges (leaving the road ends open is fine: map edge stops you)
-for (let x = 0; x < W; x++) {
-  if (x >= 18 && x <= 21) continue;
-  tree(x, H - 1);
-}
-for (let y = 1; y < H - 1; y++) {
-  if (y === 24 || y === 25) continue;
-  tree(0, y);
-  tree(W - 1, y);
-}
-for (let x = 1; x < W - 1; x++) tree(x, 0);
-// a few bushes and plants in the courtyard
-for (const [x, y] of [[4, 20], [35, 21], [9, 27], [31, 27], [26, 20], [13, 21]]) put("furniture", x, y, rpg(T.bush), true);
-for (let i = 0; i < 26; i++) {
-  const x = 2 + Math.floor(rnd() * (W - 4));
-  const y = 19 + Math.floor(rnd() * 10);
-  if ((x >= 18 && x <= 21) || y === 24 || y === 25 || L.furniture[at(x, y)]) continue;
-  put("decor", x, y, rpg([T.flower, T.sprout, T.tuft, T.tuft2][Math.floor(rnd() * 4)]));
-}
+// ---- outside the walls: darkness, and solid (only the doorway leads out) ----
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) solid(x, y);
+function tree() {}
 
 // ---- the inn ----
 const X0 = 4, X1 = 35, Y0 = 1, YB = 16; // outer wall-top box; YB = south wall-top row
 // floor everywhere inside
-for (let y = Y0 + 1; y < YB; y++) for (let x = X0 + 1; x < X1; x++) put("ground", x, y, rpg(T.woodFloor));
+for (let y = Y0 + 1; y < YB; y++) for (let x = X0 + 1; x < X1; x++) { put("ground", x, y, rpg(T.woodFloor)); clear(x, y); }
 
 /** A horizontal wall: wall-top row at y, plus two rows of wall face below it (from x0 to x1). */
 function hWall(x0, x1, y, { capL = T.wTop, capR = T.wTop } = {}) {
@@ -166,8 +138,7 @@ put("decor", 22, 12, rpg(T.stool));
 put("furniture", 33, 9, rpg(T.crateOrange), true);
 put("furniture", 33, 13, rpg(T.crateFood3), true);
 // windows on the outside (south) face, and lanterns by the door
-for (const x of [8, 14, 25, 31]) { onWall(x, YB + 1, T.windowTop); onWall(x, YB + 2, T.windowBottom); }
-for (const x of [18, 21]) onWall(x, YB + 2, T.torch);
+
 
 // keep the doorway and the road clear of plants
 for (let y = YB; y <= 23; y++) for (let x = 19; x <= 20; x++) { put("decor", x, y, 0); clear(x, y); }
@@ -191,16 +162,19 @@ for (const [name, x, y] of [
   ["innkeeper_bar_1", 27, 5], ["innkeeper_bar_2", 31, 5], ["innkeeper_kegs", 29, 5], ["innkeeper_hearth", 19, 5],
   ["server_table_1", 19, 9], ["server_table_2", 24, 11], ["server_table_3", 29, 12], ["server_table_4", 19, 14],
   ["server_bar", 30, 7], ["server_rest", 32, 11],
-  ["bard_stage", 22, 12], ["bard_garden_1", 10, 21], ["bard_garden_2", 30, 21], ["bard_crossroads", 24, 23], ["bard_room", 9, 14],
+  ["bard_stage", 22, 12], ["bard_practice_1", 15, 6], ["bard_practice_2", 26, 13], ["bard_practice_3", 20, 10], ["bard_room", 9, 14],
 ]) point(name, "npc_spot", x, y);
 // zones: what music/ambience plays and what you walk on
-const zone = (name, tx, ty, tw, th, props) =>
+const zone = (name, tx, ty, tw, th, props, type = "zone") =>
   objects.push({
-    id: nextId++, name, type: "zone", x: tx * 16, y: ty * 16, width: tw * 16, height: th * 16, rotation: 0, visible: true,
+    id: nextId++, name, type, x: tx * 16, y: ty * 16, width: tw * 16, height: th * 16, rotation: 0, visible: true,
     properties: Object.entries(props).map(([k, v]) => ({ name: k, type: "string", value: v })),
   });
 zone("inn", X0, Y0, X1 - X0 + 1, YB - Y0 + 3, { mood: "tavern", ambience: "fire", surface: "wood" });
-zone("courtyard", 0, 0, W, H, { mood: "day", ambience: "forest", surface: "grass" });
+// The way out: stepping into the doorway takes you outside to the Crossroads region.
+for (const x of [19, 20]) put("ground", x, 19, rpg(T.woodFloor));
+zone("inn_exit", 19, 18, 2, 2, { to: "crossroads", spot: "inn_front" }, "door");
+point("inn_entry", "arrival", 19, 15);
 
 // ---- write Tiled JSON ----
 let layerId = 1;
