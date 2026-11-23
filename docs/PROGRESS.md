@@ -19,6 +19,68 @@ next. Updated after every task.
 - Server: https://talesreach-server.onrender.com (Render free, auto-deploys from `main`)
 - Repo: https://github.com/Ghostworkerr/talesreach
 
+## HANDOFF — read this if you are a new Claude Code session picking up the work
+The previous session ran out of usage in the middle of **task 2.1 (open world in chunks + interiors)**.
+Everything up to the polish pass after 1.8 is finished, tested (102 tests) and live on `main`.
+
+**Where the unfinished work is:** branch `wip/task-2.1-region` (pushed). It holds:
+- `tools/maps/lib.mjs` — shared map-building helpers: `createMap(W,H)` (put/get/solid/clear/isSolid/
+  point/zone), `paintTerrain(map, mask, WATER|DIRT)` (edge tiles, removes 1-wide strips), `writeMap`,
+  `makeRandom`, `makeNoise`, `rpg(id)`/`indoor(id)` gid helpers. DIRT inner-corner ids (iTL..iBR) are a
+  guess — render the map and check them.
+- `tools/maps/build-inn.mjs` (was build-crossroads.mjs) → `assets/maps/inn.tmj`: inn interior only,
+  40×20, outside is solid. Door zone `inn_exit` (type "door", props `{to:"crossroads", spot:"inn_front"}`),
+  arrival point `inn_entry`, bard spots renamed `bard_practice_1/2/3` (the old `bard_garden_*` /
+  `bard_crossroads` spots are gone).
+- `tools/maps/build-region.mjs` → `assets/maps/crossroads.tmj`: 128×128 Crossroads region (town with
+  inn exterior, cottages, market square, signpost; Whisperwood forest north with Ancient Grove clearing;
+  Brightfield Farms east; Fenmarsh marsh south-west; roads). Door zone `inn_door` `{to:"inn",
+  spot:"inn_entry"}`, arrival point `inn_front`, area zones with mood/ambience/name, places
+  `grove_heart`, `well_square`, `farm_gate`. Not yet visually checked in-game.
+- **Do not merge this branch to `main` until the steps below are done** — the server still expects
+  the old single combined map, so the branch as-is breaks the game and several tests.
+
+**Remaining steps for 2.1 (in order, per CLAUDE.md: shared → server → client → tests):**
+1. Render `crossroads.tmj` (a Python/PIL script that draws each tile layer) and fix any bad tiles.
+2. `server/src/world/npcs.ts`: bard wandering spots → `bard_practice_1/2/3`; NPCs live in the `inn` map.
+3. Server multi-map: load both maps (`world/maps.ts`), add `map` field to `PlayerState`, spawn new
+   players in the inn (`inn_entry`; rented-room wake point still works), check door zones every tick
+   on the server (server moves the player to the target map + spot; client never says where it is),
+   make social range / inn / NPC checks map-aware, and use Colyseus `StateView` + `@view` so each
+   client only receives players and NPCs on its map and within view range (interest management).
+4. Client: load the map the server says you're on; stream the 128×128 region in 32×32-tile chunks
+   (add a build step that cuts chunk files, load chunks near the camera); fade to black on map change.
+5. Tests: update `tests/map`, `tests/inn`, `tests/npcs` (they use `crossroads.tmj` points that moved
+   to `inn.tmj`; npcs test expects the bard outdoors — now indoor practice spots). Add tests: door
+   transition, client can't pick its map, view filtering (far players not sent), chunk files.
+6. `npm run check` (lint + typecheck + tests) and `npm run build`, browser check, update this file,
+   tick 2.1 in `docs/TASKS.md`, commit, merge to `main`, push (Cloudflare + Render auto-deploy).
+Then carry on with 2.2 … 2.12 in `docs/TASKS.md`, one at a time.
+
+**How the previous session worked (keep doing this):**
+- Repo: `C:\Users\ryani\Downloads\Talesreach`. Git is at `C:\Program Files\Git\cmd` (add to PATH in
+  Bash). Commit author email: `231372634+Ghostworkerr@users.noreply.github.com`; end commit messages with
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Push straight to `main` after each task.
+- `npm run dev` runs server (port 2567) + client (Vite) together; kill leftover `node` processes
+  from the Talesreach folder afterwards or `npm ci` fails on locked files.
+- Map generators are run with `node tools/maps/<file>.mjs`. On Windows, write files with LF endings.
+- Every client→server message needs a Zod schema in `shared/` + an abuse-case test (see CLAUDE.md).
+- Owner's rule: **every action gets an animation**. Owner is not a programmer: explain in plain words,
+  give a link to try it on the phone, don't ask permission to continue.
+- Render free plan has 512 MB memory — don't add heavy in-memory things (PGlite pushed it over once).
+
+## Known issue: "The world is waking up…" takes a long time
+The game server is on Render's **free** plan, which puts it to sleep after ~15 minutes with no
+players. The first visit after that waits while it starts (usually 30–60 s, sometimes up to ~2 min
+on a busy day; the game keeps retrying for 2.5 min and shows the seconds). Checked 2026-11-23: the
+server was healthy and woke in ~11 s. The homepage now starts waking the server as soon as it opens,
+so by the time you press Play it is usually ready. Ways to remove the wait completely (owner's choice):
+- Render paid "Starter" plan (~$7/month) never sleeps; or
+- a free uptime pinger (e.g. UptimeRobot) calling https://talesreach-server.onrender.com/health every
+  10 minutes keeps it awake (uses free-plan hours; fine for one service).
+Also: without `DATABASE_URL`, every server restart forgets accounts — devices quietly re-register,
+but characters are lost. Setting up the Neon database (below) fixes that.
+
 ## Status
 | Task | Status | Notes |
 |---|---|---|
@@ -38,6 +100,8 @@ next. Updated after every task.
 | 1.7 NPCs | done | Marta (innkeeper), Tobin (server), Lark (bard): daily routines, walking, dialogue, song tips |
 | 1.8 Homepage + PWA | done | homepage at /, game at /play/, rules, privacy, credits, installable app + offline cache |
 | Phase 1 gate | waiting for owner | 10 friends, 30 min, phones + PCs |
+| 2.1 Open world in chunks + interiors | **in progress** | maps generated on branch `wip/task-2.1-region`; server/client/tests left (see HANDOFF) |
+| 2.2–2.12 | not started | |
 
 ## Waiting for the owner
 - **Database (so saves survive server restarts):** create a free Neon Postgres database and put its
@@ -66,3 +130,4 @@ next. Updated after every task.
 - 2026-11-23: 1.7 done — server-run NPCs with daily routines by world hour (Marta tends the bar / rests by the hearth; Tobin serves tables / rests; Lark wanders the courtyard by day, performs every evening, sleeps late), walking with the walk cycle on collision-checked routes; dialogue by time of day, activity and how often you've chatted; rumours; tip the bard 1 coin to change the inn's song for everyone (logged). Music notes and zzz effects. 94 tests.
 - 2026-11-23: 1.8 done — homepage (real text, screenshots, Play button, Install button), rules, privacy policy (only what the game really stores), credits (every author), installable PWA (manifest, icons made from the game art, service worker: network-first pages/maps, cached art/sound). The game moved to /play/; settings link to the pages. 100 tests. **All Phase 1 tasks done; Phase 1 gate (10 friends, 30 min) waits for the owner.**
 - 2026-11-23: Polish pass (before the Phase 1 playtest): automatic reconnection (the server keeps your character for 30 s when a phone drops; same place after), no ghosts when reloading (a waiting copy is cancelled when the same account rejoins), loading percentage, welcome message fades, one-time "How to play" card, name labels no longer overlap. 102 tests.
+- 2026-11-23: 2.1 started — region map (128×128: town, forest + grove, farms, marsh) and inn-interior map generators on branch `wip/task-2.1-region`. Homepage now wakes the sleeping server early. Handoff notes added at the top of this file.
