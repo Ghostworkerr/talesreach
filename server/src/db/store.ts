@@ -77,9 +77,24 @@ export class AccountStore {
     await this.db.update(accounts).set({ lastSeenAt: new Date() }).where(eq(accounts.id, accountId));
   }
 
-  async setProfile(accountId: string, name: string, appearance: string) {
-    await this.db.update(accounts).set({ name, appearance }).where(eq(accounts.id, accountId));
+  /** Save name + appearance. Returns false if another character already has that name. */
+  async setProfile(accountId: string, name: string, appearance: string): Promise<boolean> {
+    try {
+      await this.db.update(accounts).set({ name, appearance }).where(eq(accounts.id, accountId));
+      return true;
+    } catch (err) {
+      if (isUniqueViolation(err)) return false;
+      throw err;
+    }
   }
+}
+
+/** Postgres "unique_violation" (23505), however the driver wraps it. */
+function isUniqueViolation(err: unknown): boolean {
+  for (let e: unknown = err; e; e = (e as { cause?: unknown }).cause) {
+    if ((e as { code?: unknown }).code === "23505") return true;
+  }
+  return false;
 }
 
 /**

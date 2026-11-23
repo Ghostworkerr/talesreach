@@ -42,4 +42,6 @@ export const CREATE_TABLES = [
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
   sql`CREATE INDEX IF NOT EXISTS sessions_account_idx ON sessions(account_id)`,
+  // Character names are unique, ignoring capital letters (empty = not chosen yet).
+  sql`CREATE UNIQUE INDEX IF NOT EXISTS accounts_name_unique ON accounts (lower(name)) WHERE name <> ''`,
 ];

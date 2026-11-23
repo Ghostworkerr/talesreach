@@ -4,6 +4,7 @@ import {
   MAX_QUEUED_INPUTS,
   applyInput,
   TICK_RATE,
+  DEFAULT_APPEARANCE,
   ageGroup,
   parseClientMessage,
   type ClientMessage,
@@ -14,6 +15,7 @@ import { PlayerState, WorldState } from "./WorldState.js";
 import { START_MAP, loadMap } from "../world/maps.js";
 import { getAccountStore } from "../services.js";
 import type { Account } from "../db/store.js";
+import { storedAppearance } from "../http/accounts.js";
 
 /** Number of placeholder colours the client knows how to draw. */
 const COLOUR_COUNT = 8;
@@ -86,6 +88,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     void getAccountStore().touch(account.id);
     const player = new PlayerState();
     player.name = account.name || `Traveller ${this.joinCounter}`;
+    Object.assign(player, storedAppearance(account) ?? DEFAULT_APPEARANCE);
     player.colour = (this.joinCounter - 1) % COLOUR_COUNT;
     // Arrive inside the Crossroads Inn, at one of the map's spawn points.
     const spawns = this.map.points.filter((p) => p.type === "spawn");

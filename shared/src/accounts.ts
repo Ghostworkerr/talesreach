@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Appearance } from "./appearance.js";
 
 /**
  * Account and age rules (CLAUDE.md "Player safety rules").
@@ -67,3 +68,11 @@ export interface AccountInfo {
 export function formatSaveCode(raw: string): string {
   return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
 }
+
+/** Character creator: name + appearance (the server re-checks the name rules). */
+export const ProfileRequest = z
+  .object({
+    name: z.string().max(40),
+    appearance: Appearance,
+  })
+  .strict();

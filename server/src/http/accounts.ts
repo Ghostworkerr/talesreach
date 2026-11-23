@@ -1,5 +1,15 @@
 import express, { type Request, type Response, type NextFunction } from "express";
-import { GuestRequest, LoginRequest, RateLimiter, ageGroup, formatSaveCode, type AccountInfo } from "@talesreach/shared";
+import {
+  Appearance,
+  GuestRequest,
+  LoginRequest,
+  ProfileRequest,
+  RateLimiter,
+  ageGroup,
+  checkName,
+  formatSaveCode,
+  type AccountInfo,
+} from "@talesreach/shared";
 import type { Account } from "../db/store.js";
 import { getAccountStore } from "../services.js";
 
@@ -38,6 +48,16 @@ export function accountInfo(a: Account): AccountInfo {
     hasSaveCode: a.saveCodeHash !== null,
     createdAt: a.createdAt.toISOString(),
   };
+}
+
+/** The saved appearance, or null if it's missing or no longer valid. */
+export function storedAppearance(a: Account): Appearance | null {
+  try {
+    const parsed = Appearance.safeParse(JSON.parse(a.appearance));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Account endpoints: guest sign-up (with date of birth), save codes, and "who am I". */
@@ -82,7 +102,21 @@ export function accountRoutes(app: express.Application, LIMITS: RateLimits = DEF
     const token = bearer(req);
     const account = token ? await getAccountStore().byToken(token) : undefined;
     if (!account) return res.status(401).json({ error: "unknown_token" });
-    res.json({ account: accountInfo(account), name: account.name });
+    res.json({ account: accountInfo(account), name: account.name, appearance: storedAppearance(account) });
+  });
+
+  // The character creator saves the name and look here (before entering the world).
+  api.post("/profile", limiter(LIMITS.general), async (req, res) => {
+    const token = bearer(req);
+    const account = token ? await getAccountStore().byToken(token) : undefined;
+    if (!account) return res.status(401).json({ error: "unknown_token" });
+    const parsed = ProfileRequest.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "invalid_request" });
+    const { name, problem } = checkName(parsed.data.name);
+    if (problem) return res.status(400).json({ error: `name_${problem}` });
+    const saved = await getAccountStore().setProfile(account.id, name, JSON.stringify(parsed.data.appearance));
+    if (!saved) return res.status(409).json({ error: "name_taken" });
+    res.json({ name, appearance: parsed.data.appearance });
   });
 
   // Bad JSON and the like: a plain 400, no stack traces.

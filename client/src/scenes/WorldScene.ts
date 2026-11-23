@@ -10,6 +10,7 @@ import {
   parseTiledMap,
   stepMovement,
   zoneAt,
+  type Appearance,
   type GameMap,
   type MapZone,
   type Vec2,
@@ -17,14 +18,18 @@ import {
 import { isAuthError, joinWorld, wakeServer } from "../net";
 import { account } from "../account";
 import { showAgeGate } from "../ui/ageGate";
+import { showCreator } from "../ui/creator";
+import { playCutscene, type CutsceneStep } from "../ui/cutscene";
+import { ApiError } from "../account";
 import { WORLD_ZOOM } from "../display";
-import { MAPS, READY_MADE_CHARACTERS, SHEETS, loadArt } from "../art";
+import { MAPS, SHEETS, loadArt } from "../art";
+import { dollKey, dollTexture } from "../doll";
 import type { UIScene } from "./UIScene";
 import { CharacterView, snap } from "../character";
 import { audio, type AmbienceLayer, type Mood, type Surface } from "../audio";
 
 /** Shape of the state the server sends (kept loose: the server owns it). */
-interface PlayerView {
+interface PlayerView extends Appearance {
   name: string;
   colour: number;
   x: number;
@@ -40,6 +45,8 @@ interface WorldView {
 
 interface Avatar {
   view: CharacterView;
+  /** Which look the view is showing (players can change it later). */
+  look: string;
   label: Phaser.GameObjects.Text;
   interp: Interpolator;
 }
@@ -166,6 +173,12 @@ export class WorldScene extends Phaser.Scene {
           say("");
           await showAgeGate(uiRoot);
         }
+        // No character yet: the opening scene, then the character creator.
+        if (uiRoot && !(await this.hasCharacter())) {
+          say("");
+          await this.playOpening(uiRoot);
+          await showCreator(uiRoot, this.textures.get(SHEETS.chars.key).getSourceImage() as CanvasImageSource);
+        }
         say("The world is waking up…");
         try {
           room = await joinWorld(account.token ?? "", waiting);
@@ -188,6 +201,36 @@ export class WorldScene extends Phaser.Scene {
     } catch {
       say("Could not reach the world. Please try again in a few minutes.");
     }
+  }
+
+  /** True if this account already has a name (the creator is done). Recovers a forgotten account. */
+  private async hasCharacter(): Promise<boolean> {
+    try {
+      return (await account.me()).name !== "";
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401 && (await account.recover())) {
+        return (await account.me()).name !== "";
+      }
+      return false;
+    }
+  }
+
+  /** The opening: a short, skippable glide from the crossroads into the inn (docs/DESIGN_NOTES.md). */
+  private async playOpening(root: HTMLElement) {
+    const cam = this.cameras.main;
+    const at = (tx: number, ty: number) => ({ x: tx * 16 + 8, y: ty * 16 + 8 });
+    const crossroads = at(20, 24);
+    cam.centerOn(crossroads.x, crossroads.y);
+    const steps: CutsceneStep[] = [
+      { narrate: "All the roads of the realm meet at one place." },
+      { pan: at(20, 18), ms: 3500 },
+      { narrate: "The Crossroads Inn — a warm fire, cold ale, and more stories than tables." },
+      { pan: at(20, 10), ms: 3000 },
+      { narrate: "You arrive with a few coins, worn boots, and a name nobody here knows… yet." },
+      { narrate: "So — who are you, traveller?" },
+    ];
+    audio.setMood("tavern");
+    await playCutscene(root, steps, { pan: (x, y, ms) => cam.pan(x, y, ms, "Sine.easeInOut") });
   }
 
   /** Runs every time a server update arrives. */
@@ -215,6 +258,11 @@ export class WorldScene extends Phaser.Scene {
         this.correction.y -= fix.y;
       } else {
         a.interp.add(now, { x: p.x, y: p.y });
+      }
+      const look = dollKey(p);
+      if (look !== a.look) {
+        a.view.setTexture(dollTexture(this, p));
+        a.look = look;
       }
     });
 
@@ -331,8 +379,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private createAvatar(p: PlayerView, isMe: boolean): Avatar {
-    const frame = READY_MADE_CHARACTERS[p.colour % READY_MADE_CHARACTERS.length] ?? READY_MADE_CHARACTERS[0];
-    const view = new CharacterView(this, frame, p.x, p.y, isMe, isMe ? () => audio.footstep(this.surface) : undefined);
+    const view = new CharacterView(this, dollTexture(this, p), p.x, p.y, isMe, isMe ? () => audio.footstep(this.surface) : undefined);
     const label = this.add
       .text(p.x, p.y - PLAYER_RADIUS - 4, isMe ? `${p.name} (you)` : p.name, {
         fontFamily: "system-ui, sans-serif",
@@ -344,6 +391,6 @@ export class WorldScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setDepth(DEPTH.labels)
       .setResolution(WORLD_ZOOM);
-    return { view, label, interp: new Interpolator(100) };
+    return { view, look: dollKey(p), label, interp: new Interpolator(100) };
   }
 }

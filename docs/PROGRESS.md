@@ -31,8 +31,8 @@ next. Updated after every task.
 | 1.1 Music and sound | done | 6 CC0 tracks, 3 ambience loops, 24 Kenney effects; audio manager + settings panel |
 | 1.2 Tavern map | done | Tiled map built by tools/maps/build-crossroads.mjs; server collision; tap-to-move |
 | 1.3 Guest play + accounts | done | age gate (under-13 blocked, minors flagged), guest accounts, save codes; Drizzle + Postgres (in-memory until DATABASE_URL) |
-| 1.4 Character creator | next | |
-| 1.5 Chat + safety | todo | |
+| 1.4 Character creator | done | opening cutscene + creator (8 options, animated preview, random look/name), unique filtered names |
+| 1.5 Chat + safety | next | |
 | 1.6 World clock + inn rooms | todo | |
 | 1.7 NPCs | todo | |
 | 1.8 Homepage + PWA | todo | |
@@ -53,3 +53,4 @@ next. Updated after every task.
 - 2026-11-23: 1.2 done — Crossroads Inn + courtyard Tiled map (bar, hearth, tables, bard corner, 2 rentable rooms, crossroads outside). Server uses the same map for walls; tap/click-to-move with A* routes and a marker; music/ambience/footsteps change between inn and courtyard. 35 tests.
 - 2026-11-23: Repo now stores Unix line endings (.gitattributes).
 - 2026-11-23: 1.3 done — neutral date-of-birth screen before any account; under-13 refused (and remembered for a day on that device); 13–17 flagged minor; guest accounts with device tokens (hashed); save codes to play on other devices (rate-limited); one character per account at a time; silent re-registration if the server forgets. 46 tests.
+- 2026-11-23: 1.4 done — first visit: date of birth → opening cutscene (letterboxed glide from the crossroads into the inn, skippable) → character creator (skin, build, hair, colour, beard, headwear, outfit, legs; animated walking preview; random look/name) → world. Everyone sees each other's look. Names 3–16 letters, unique, filtered (whole-word list avoids Scunthorpe-style false blocks). Reusable cutscene system (narration, dialogue, camera pans). 55 tests.

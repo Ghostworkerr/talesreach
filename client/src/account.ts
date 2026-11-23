@@ -1,5 +1,11 @@
 import { serverUrl } from "./net";
-import type { AccountInfo } from "@talesreach/shared";
+import type { AccountInfo, Appearance } from "@talesreach/shared";
+
+export interface Me {
+  account: AccountInfo;
+  name: string;
+  appearance: Appearance | null;
+}
 
 /**
  * Device-side account handling. The device keeps a random token (its login).
@@ -7,7 +13,13 @@ import type { AccountInfo } from "@talesreach/shared";
  * re-create a guest account if the server forgot it (e.g. before a database is
  * connected) without asking the player again.
  */
-const KEYS = { token: "talesreach.token", dob: "talesreach.dob", blocked: "talesreach.ageBlockedUntil" } as const;
+const KEYS = {
+  token: "talesreach.token",
+  dob: "talesreach.dob",
+  blocked: "talesreach.ageBlockedUntil",
+  /** Copy of this device's own name + look, to restore them if the server forgot the account. */
+  profile: "talesreach.profile",
+} as const;
 const BLOCK_MS = 24 * 60 * 60 * 1000;
 
 const read = (k: string) => {
@@ -88,6 +100,11 @@ export const account = {
     if (!dob) return false;
     try {
       await this.createGuest(dob);
+      const profile = read(KEYS.profile);
+      if (profile) {
+        const p = JSON.parse(profile) as { name: string; appearance: Appearance };
+        await this.saveProfile(p.name, p.appearance).catch(() => undefined);
+      }
       return true;
     } catch {
       return false;
@@ -98,6 +115,22 @@ export const account = {
     const token = this.token;
     if (!token) throw new ApiError(401, "unknown_token");
     return (await api<{ code: string }>("/save-code", { method: "POST", body: {}, token })).code;
+  },
+
+  /** Who this device is signed in as (name and look are empty until the creator is done). */
+  async me(): Promise<Me> {
+    const token = this.token;
+    if (!token) throw new ApiError(401, "unknown_token");
+    return api<Me>("/me", { token });
+  },
+
+  /** Save the character creator's choices (the server checks the name). */
+  async saveProfile(name: string, appearance: Appearance): Promise<{ name: string; appearance: Appearance }> {
+    const token = this.token;
+    if (!token) throw new ApiError(401, "unknown_token");
+    const saved = await api<{ name: string; appearance: Appearance }>("/profile", { body: { name, appearance }, token });
+    write(KEYS.profile, JSON.stringify(saved));
+    return saved;
   },
 
   /** Log this device into an existing account with a save code. */
