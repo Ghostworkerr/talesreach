@@ -18,7 +18,7 @@ reached, with simple step-by-step instructions written for a non-programmer on a
 - [x] 0.4 Find and choose the art family (see CLAUDE.md asset rules): one CC0/CC-BY pack
       (prefer Kenney or a single itch.io/OpenGameArt family) covering medieval town, forest,
       characters and UI. Write `docs/STYLE.md` and `assets/CREDITS.md`. Import a first set.
-- [ ] 0.5 Deploy for testing: client to Cloudflare Pages, server reachable for testing.
+- [x] 0.5 Deploy for testing: client to Cloudflare Pages, server reachable for testing.
       **[OWNER]** create free Cloudflare and Render accounts and connect this GitHub repo
       when asked (give exact taps/clicks).
 - **Gate:** owner opens the link on their phone and a PC at the same time and both
