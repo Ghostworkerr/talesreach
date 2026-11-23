@@ -13,10 +13,14 @@ const PIECES = {
   body: [3, 0, 10, 14],
   armL: [0, 6, 3, 8],
   armR: [13, 6, 3, 8],
-  // Feet include one extra row of leg (row 13) so a body bob never opens a gap.
+  // Feet overlap the body's last row and are drawn in front, so steps are clearly visible.
   footL: [0, 13, 8, 3],
   footR: [8, 13, 8, 3],
 } as const;
+/** Draw order, back to front. */
+const DRAW_ORDER: readonly PieceName[] = ["body", "armL", "armR", "footL", "footR"];
+/** How far (art pixels) the swinging foot reaches forward/back when walking sideways. */
+const REACH = 2;
 type PieceName = keyof typeof PIECES;
 
 /** Distance walked per full stride (two steps), in world pixels. */
@@ -48,6 +52,8 @@ export class CharacterView {
   private lastX: number;
   private lastY: number;
   private lastHalf = 0;
+  /** True when moving mostly left/right (feet scissor); false when moving up/down (feet lift in place). */
+  private sideways = true;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -61,14 +67,12 @@ export class CharacterView {
     // A soft shadow; yours gets a light ring so you can find yourself.
     this.shadow = scene.add.ellipse(0, 3, 12, 5, isMe ? 0xfff3c4 : 0x000000, isMe ? 0.55 : 0.3);
     this.flipper = scene.add.container(0, 0);
-    for (const name of Object.keys(PIECES) as PieceName[]) {
+    for (const name of DRAW_ORDER) {
       const [cx, cy, cw, ch] = PIECES[name];
       const img = scene.add.image(0, BODY_Y, SHEETS.chars.key, frame).setCrop(cx, cy, cw, ch);
       this.pieces[name] = img;
       this.flipper.add(img);
     }
-    // Draw order: feet, then arms behind body edges, then body on top.
-    this.flipper.bringToTop(this.pieces.body);
     this.root = scene.add.container(snap(x), snap(y), [this.shadow, this.flipper]);
     this.root.setDepth(y);
   }
@@ -85,6 +89,7 @@ export class CharacterView {
 
     if (dist > 0.01) {
       this.stillFor = 0;
+      this.sideways = Math.abs(dx) >= Math.abs(dy) * 0.5;
       this.phase = (this.phase + dist / STRIDE) % 1;
     } else {
       this.stillFor += dtMs;
@@ -97,12 +102,14 @@ export class CharacterView {
     this.root.setPosition(snap(x), snap(y)).setDepth(y);
   }
 
-  /** Two steps per stride: a foot lifts, the opposite arm swings, the body bobs. */
+  /**
+   * Two steps per stride. In each step one foot swings (lifts up to 2px and, when
+   * walking sideways, moves from back to front) while the other stays planted and
+   * slides back; the opposite arm swings up and the body rises at mid-step.
+   */
   private poseWalk() {
     const half = this.phase < 0.5 ? 0 : 1;
-    const local = (this.phase * 2) % 1;
-    const lift = local < 0.6 ? 1 : 0;
-    const bob = local > 0.15 && local < 0.6 ? -1 : 0;
+    const t = (this.phase * 2) % 1;
 
     // A foot just came down: kick up a little dust under it.
     if (half !== this.lastHalf) {
@@ -110,12 +117,20 @@ export class CharacterView {
       this.lastHalf = half;
     }
 
-    this.setPiece("footL", 0, half === 0 ? -lift : 0);
-    this.setPiece("footR", 0, half === 1 ? -lift : 0);
+    const reach = this.sideways ? REACH : 0;
+    const swingX = Math.round(-reach + 2 * reach * t);
+    const plantX = -Math.round(swingX / 2);
+    const swingY = t < 0.15 || t > 0.85 ? 0 : t < 0.3 || t > 0.7 ? -1 : -2;
+    const bob = t > 0.3 && t < 0.7 ? -1 : 0;
+    const armLift = t > 0.15 && t < 0.85 ? -1 : 0;
+
+    const [swing, plant] = half === 0 ? (["footL", "footR"] as const) : (["footR", "footL"] as const);
+    const [armUp, armDown] = half === 0 ? (["armR", "armL"] as const) : (["armL", "armR"] as const);
+    this.setPiece(swing, swingX, swingY);
+    this.setPiece(plant, plantX, 0);
     this.setPiece("body", 0, bob);
-    // Arms swing opposite to the legs.
-    this.setPiece("armL", 0, bob + (half === 1 ? -lift : 0));
-    this.setPiece("armR", 0, bob + (half === 0 ? -lift : 0));
+    this.setPiece(armUp, 0, bob + armLift);
+    this.setPiece(armDown, 0, bob);
     this.idleClock = 0;
   }
 
