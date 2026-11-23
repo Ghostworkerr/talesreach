@@ -10,10 +10,8 @@ import {
   type Vec2,
 } from "@talesreach/shared";
 import { joinWorld } from "../net";
+import { READY_MADE_CHARACTERS, RPG, SHEETS, TILE, loadArt } from "../art";
 import type { UIScene } from "./UIScene";
-
-/** Placeholder colours, indexed by the server-assigned colour number. */
-const COLOURS = [0xe0b04a, 0x5fa8d3, 0xd46a5e, 0x7cc47a, 0xb48ad8, 0xe58fbf, 0x6fd1c4, 0xc9c9c9];
 
 /** Shape of the state the server sends (kept loose: the server owns it). */
 interface PlayerView {
@@ -31,12 +29,15 @@ interface WorldView {
 }
 
 interface Avatar {
-  body: Phaser.GameObjects.Arc;
+  body: Phaser.GameObjects.Sprite;
+  shadow: Phaser.GameObjects.Ellipse;
   label: Phaser.GameObjects.Text;
   interp: Interpolator;
 }
 
 const STEP_MS = MOVE_STEP_SECONDS * 1000;
+/** Tiles of forest drawn outside each edge of the walkable field. */
+const FOREST_MARGIN = 3;
 /** After a hiccup, catch up at most this many steps in one frame (keeps us under the server's rate limit). */
 const MAX_STEPS_PER_FRAME = 2;
 
@@ -53,9 +54,15 @@ export class WorldScene extends Phaser.Scene {
     super("world");
   }
 
+  preload() {
+    loadArt(this);
+  }
+
   create() {
     this.drawGround();
-    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    // The forest ring sits just outside the walkable field, so the camera may show it.
+    const m = FOREST_MARGIN * TILE;
+    this.cameras.main.setBounds(-m, -m, WORLD_WIDTH + m * 2, WORLD_HEIGHT + m * 2);
     // 2x zoom keeps characters and names readable on a phone in landscape.
     this.cameras.main.setZoom(2);
     this.cameras.main.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
@@ -63,13 +70,53 @@ export class WorldScene extends Phaser.Scene {
     void this.connect();
   }
 
+  /** Grass field with small plants, ringed by forest just outside the walkable area. */
   private drawGround() {
-    const g = this.add.graphics();
-    g.fillStyle(0x3d5a3a, 1).fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    g.lineStyle(1, 0x000000, 0.12);
-    for (let x = 0; x <= WORLD_WIDTH; x += 32) g.lineBetween(x, 0, x, WORLD_HEIGHT);
-    for (let y = 0; y <= WORLD_HEIGHT; y += 32) g.lineBetween(0, y, WORLD_WIDTH, y);
-    g.lineStyle(4, 0x2a1f14, 1).strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    const M = FOREST_MARGIN;
+    const cols = Math.ceil(WORLD_WIDTH / TILE) + M * 2;
+    const rows = Math.ceil(WORLD_HEIGHT / TILE) + M * 2;
+    const map = this.make.tilemap({ tileWidth: TILE, tileHeight: TILE, width: cols, height: rows });
+    const tiles = map.addTilesetImage(SHEETS.rpg.key, SHEETS.rpg.key, TILE, TILE, 0, 1);
+    if (!tiles) return;
+    const ground = map.createBlankLayer("ground", tiles, -M * TILE, -M * TILE);
+    if (!ground) return;
+    // Fixed seed so every player sees the same field.
+    const rnd = new Phaser.Math.RandomDataGenerator(["talesreach"]);
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const roll = rnd.frac();
+        ground.putTileAt(roll < 0.2 ? RPG.grassAlt : RPG.grass, x, y);
+        const inField = x >= M && x < cols - M && y >= M && y < rows - M;
+        if (inField && roll > 0.95) {
+          const px = (x - M) * TILE + TILE / 2;
+          const py = (y - M) * TILE + TILE / 2;
+          this.add.image(px, py, SHEETS.rpg.key, rnd.pick([...RPG.decor])).setDepth(1);
+        }
+      }
+    }
+    // Forest ring: three staggered rows of trees outside each edge.
+    for (let ring = 0; ring < M; ring++) {
+      const off = ring * TILE + TILE / 2;
+      for (let x = -M * TILE + (ring % 2) * 8; x < WORLD_WIDTH + M * TILE; x += TILE) {
+        this.addTree(x + TILE / 2, -off + TILE / 2, rnd);
+        this.addTree(x + TILE / 2, WORLD_HEIGHT + off + TILE * 1.5, rnd);
+      }
+      for (let y = -TILE / 2; y < WORLD_HEIGHT + TILE * 2; y += TILE) {
+        this.addTree(-off, y + (ring % 2) * 8, rnd);
+        this.addTree(WORLD_WIDTH + off, y + (ring % 2) * 8, rnd);
+      }
+    }
+    for (let i = 0; i < 14; i++) {
+      this.add
+        .image(rnd.between(3, WORLD_WIDTH / TILE - 4) * TILE, rnd.between(3, WORLD_HEIGHT / TILE - 4) * TILE, SHEETS.rpg.key, RPG.bush)
+        .setDepth(1);
+    }
+  }
+
+  private addTree(x: number, baseY: number, rnd: Phaser.Math.RandomDataGenerator) {
+    const pine = rnd.frac() < 0.5;
+    this.add.image(x, baseY - TILE / 2, SHEETS.rpg.key, pine ? RPG.pineTrunk : RPG.treeTrunk).setDepth(baseY);
+    this.add.image(x, baseY - TILE * 1.5, SHEETS.rpg.key, pine ? RPG.pineTop : RPG.treeTop).setDepth(baseY);
   }
 
   private async connect() {
@@ -125,6 +172,7 @@ export class WorldScene extends Phaser.Scene {
     for (const [id, a] of this.avatars) {
       if (seen.has(id)) continue;
       a.body.destroy();
+      a.shadow.destroy();
       a.label.destroy();
       this.avatars.delete(id);
     }
@@ -165,15 +213,19 @@ export class WorldScene extends Phaser.Scene {
         pos = a.interp.sample(now);
       }
       if (!pos) continue;
-      a.body.setPosition(pos.x, pos.y);
-      a.label.setPosition(pos.x, pos.y - PLAYER_RADIUS - 4);
+      // Face the way you're walking; draw lower characters in front.
+      if (Math.abs(pos.x - a.body.x) > 0.05) a.body.setFlipX(pos.x < a.body.x);
+      a.body.setPosition(pos.x, pos.y - 4).setDepth(pos.y);
+      a.shadow.setPosition(pos.x, pos.y + 3).setDepth(pos.y - 1);
+      a.label.setPosition(pos.x, pos.y - PLAYER_RADIUS - 6).setDepth(WORLD_HEIGHT + 1);
     }
   }
 
   private createAvatar(p: PlayerView, isMe: boolean): Avatar {
-    const colour = COLOURS[p.colour % COLOURS.length] ?? 0xffffff;
-    const body = this.add.circle(p.x, p.y, PLAYER_RADIUS, colour).setDepth(10);
-    if (isMe) body.setStrokeStyle(2, 0xffffff);
+    const frame = READY_MADE_CHARACTERS[p.colour % READY_MADE_CHARACTERS.length] ?? READY_MADE_CHARACTERS[0];
+    const body = this.add.sprite(p.x, p.y - 4, SHEETS.chars.key, frame);
+    // A soft shadow; yours gets a light ring so you can find yourself.
+    const shadow = this.add.ellipse(p.x, p.y + 3, 12, 5, isMe ? 0xfff3c4 : 0x000000, isMe ? 0.55 : 0.3);
     const label = this.add
       .text(p.x, p.y - PLAYER_RADIUS - 4, isMe ? `${p.name} (you)` : p.name, {
         fontFamily: "system-ui, sans-serif",
@@ -183,8 +235,8 @@ export class WorldScene extends Phaser.Scene {
         strokeThickness: 3,
       })
       .setOrigin(0.5, 1)
-      .setDepth(11)
+      .setDepth(WORLD_HEIGHT + 1)
       .setResolution(4);
-    return { body, label, interp: new Interpolator(100) };
+    return { body, shadow, label, interp: new Interpolator(100) };
   }
 }
