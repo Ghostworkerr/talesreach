@@ -28,8 +28,13 @@ suits phones and the 15 MB first-download limit.
   something is missing, any addition must be CC0/CC-BY, 16 × 16, and match the palette
   below; record it in `assets/CREDITS.md`.
 - **Characters** are built in layers, bottom to top: body → legs → shirt/armour → hair →
-  beard → hat/helmet → held item. Characters face the camera (no walk frames in this
-  pack); movement is shown with a small bob and flipping left/right.
+  beard → hat/helmet → held item. Characters face the camera.
+- **Every action is animated** (owner's rule). The pack has no animation frames, so
+  `client/src/character.ts` cuts each character into paper-doll pieces (body, two arms,
+  two feet) and animates them in whole art pixels: walking lifts the feet in turn, swings
+  the opposite arm, bobs the body and kicks up dust; standing still breathes. New actions
+  (attack, gather, sit, emote, hit, downed…) add their own poses the same way.
+- Positions are snapped to whole screen pixels so characters never shimmer against the map.
 - **Text** is drawn as HTML/CSS overlay or Phaser text with a dark outline, never baked
   into art. Minimum 11 px world text at 2× zoom (22 px on screen).
 - **UI** uses the beige/brown parchment panels and brown buttons; blue/grey variants only

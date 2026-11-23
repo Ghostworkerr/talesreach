@@ -14,6 +14,7 @@ import { joinWorld } from "../net";
 import { WORLD_ZOOM } from "../display";
 import { READY_MADE_CHARACTERS, RPG, SHEETS, TILE, loadArt } from "../art";
 import type { UIScene } from "./UIScene";
+import { CharacterView, snap } from "../character";
 
 /** Shape of the state the server sends (kept loose: the server owns it). */
 interface PlayerView {
@@ -31,8 +32,7 @@ interface WorldView {
 }
 
 interface Avatar {
-  body: Phaser.GameObjects.Sprite;
-  shadow: Phaser.GameObjects.Ellipse;
+  view: CharacterView;
   label: Phaser.GameObjects.Text;
   interp: Interpolator;
 }
@@ -163,7 +163,7 @@ export class WorldScene extends Phaser.Scene {
         this.avatars.set(id, a);
         if (isMe) {
           this.predictor = new Predictor({ x: p.x, y: p.y });
-          this.cameras.main.startFollow(a.body, true, 1, 1);
+          this.cameras.main.startFollow(a.view.root, true, 1, 1);
         }
       }
       if (isMe && this.predictor) {
@@ -177,8 +177,7 @@ export class WorldScene extends Phaser.Scene {
 
     for (const [id, a] of this.avatars) {
       if (seen.has(id)) continue;
-      a.body.destroy();
-      a.shadow.destroy();
+      a.view.destroy();
       a.label.destroy();
       this.avatars.delete(id);
     }
@@ -188,7 +187,7 @@ export class WorldScene extends Phaser.Scene {
     const room = this.room;
     if (!room) return;
     this.stepInput(room, deltaMs);
-    this.draw(room);
+    this.draw(room, deltaMs);
   }
 
   /**
@@ -216,7 +215,7 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private draw(room: Room) {
+  private draw(room: Room, deltaMs: number) {
     const now = performance.now();
     // Fade out any server correction over a few frames.
     this.correction.x *= 0.8;
@@ -232,19 +231,15 @@ export class WorldScene extends Phaser.Scene {
         pos = a.interp.sample(now);
       }
       if (!pos) continue;
-      // Face the way you're walking; draw lower characters in front.
-      if (Math.abs(pos.x - a.body.x) > 0.05) a.body.setFlipX(pos.x < a.body.x);
-      a.body.setPosition(pos.x, pos.y - 4).setDepth(pos.y);
-      a.shadow.setPosition(pos.x, pos.y + 3).setDepth(pos.y - 1);
-      a.label.setPosition(pos.x, pos.y - PLAYER_RADIUS - 6).setDepth(WORLD_HEIGHT + 1);
+      // Walk/idle animation, facing, depth and pixel snapping all happen in the view.
+      a.view.update(pos.x, pos.y, deltaMs);
+      a.label.setPosition(snap(pos.x), snap(pos.y - PLAYER_RADIUS - 6)).setDepth(WORLD_HEIGHT + 1);
     }
   }
 
   private createAvatar(p: PlayerView, isMe: boolean): Avatar {
     const frame = READY_MADE_CHARACTERS[p.colour % READY_MADE_CHARACTERS.length] ?? READY_MADE_CHARACTERS[0];
-    const body = this.add.sprite(p.x, p.y - 4, SHEETS.chars.key, frame);
-    // A soft shadow; yours gets a light ring so you can find yourself.
-    const shadow = this.add.ellipse(p.x, p.y + 3, 12, 5, isMe ? 0xfff3c4 : 0x000000, isMe ? 0.55 : 0.3);
+    const view = new CharacterView(this, frame, p.x, p.y, isMe);
     const label = this.add
       .text(p.x, p.y - PLAYER_RADIUS - 4, isMe ? `${p.name} (you)` : p.name, {
         fontFamily: "system-ui, sans-serif",
@@ -256,6 +251,6 @@ export class WorldScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setDepth(WORLD_HEIGHT + 1)
       .setResolution(WORLD_ZOOM);
-    return { body, shadow, label, interp: new Interpolator(100) };
+    return { view, label, interp: new Interpolator(100) };
   }
 }

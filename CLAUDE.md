@@ -60,6 +60,16 @@ Read these before any task:
   Low/Medium/High quality setting.
 - Audio starts on the first tap (phones block it before then).
 
+## Animation (owner's rule: every action is animated)
+- Every action a character or creature does gets a visible animation: walking, idling,
+  attacking, dodging, blocking, casting, gathering, crafting, farming, sitting, emotes,
+  getting hit, being downed — never a still sprite sliding around.
+- If the art pack has no frames for an action, animate it in code with the paper-doll
+  parts (see `client/src/character.ts`): move feet/arms/body in whole art pixels, add
+  small effects (dust, sparks, swooshes). Keep it crisp: no rotation or scaling of pixel art
+  except whole-pixel steps.
+- Other players see the same animations (driven by their movement/state from the server).
+
 ## Assets: art, music and sound — you find them
 The owner cannot make art or music. You source everything. Rules:
 - Only use assets whose licence allows **commercial use in a web game**:
