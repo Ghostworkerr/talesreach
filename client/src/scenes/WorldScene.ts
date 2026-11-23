@@ -15,6 +15,7 @@ import { WORLD_ZOOM } from "../display";
 import { READY_MADE_CHARACTERS, RPG, SHEETS, TILE, loadArt } from "../art";
 import type { UIScene } from "./UIScene";
 import { CharacterView, snap } from "../character";
+import { audio } from "../audio";
 
 /** Shape of the state the server sends (kept loose: the server owns it). */
 interface PlayerView {
@@ -135,6 +136,9 @@ export class WorldScene extends Phaser.Scene {
       );
       this.room = room;
       say("Connected. Move with WASD / arrows, or drag on the left of the screen.");
+      // Outdoors by day for now (the inn and day/night arrive in tasks 1.2 and 1.6).
+      audio.setMood("day");
+      audio.setAmbience({ forest: 1 });
       room.onMessage("pong", () => undefined);
       room.onMessage("rejected", () => undefined);
       room.onStateChange(() => this.onServerUpdate(room));
@@ -239,7 +243,7 @@ export class WorldScene extends Phaser.Scene {
 
   private createAvatar(p: PlayerView, isMe: boolean): Avatar {
     const frame = READY_MADE_CHARACTERS[p.colour % READY_MADE_CHARACTERS.length] ?? READY_MADE_CHARACTERS[0];
-    const view = new CharacterView(this, frame, p.x, p.y, isMe);
+    const view = new CharacterView(this, frame, p.x, p.y, isMe, isMe ? () => audio.footstep("grass") : undefined);
     const label = this.add
       .text(p.x, p.y - PLAYER_RADIUS - 4, isMe ? `${p.name} (you)` : p.name, {
         fontFamily: "system-ui, sans-serif",

@@ -1,0 +1,76 @@
+/* Talesreach HTML overlay UI — parchment-and-wood style from the Kenney RPG UI pack. */
+:root {
+  --ink: #3b2a1a;
+  --ink-soft: #6b5034;
+  --parchment: #e9d8b4;
+  --wood: #6e4a2c;
+  --light: #f3e6c8;
+  --night: #1b1611;
+  --accent: #c58f5c;
+  --focus: #fff3c4;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+#ui button, #ui input, #ui .panel { pointer-events: auto; }
+
+.panel {
+  border: 18px solid transparent;
+  border-image: url("/ui/kenney-ui-rpg-expansion/panel_beige.png") 18 fill stretch;
+  color: var(--ink);
+  padding: 4px 10px;
+  box-sizing: border-box;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+}
+
+.btn {
+  font: 600 16px/1 system-ui, sans-serif;
+  color: var(--light);
+  min-height: 46px;
+  min-width: 46px;
+  padding: 0 18px;
+  border: 10px solid transparent;
+  border-image: url("/ui/kenney-ui-rpg-expansion/buttonLong_brown.png") 10 fill stretch;
+  background: none;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.btn:active { border-image-source: url("/ui/kenney-ui-rpg-expansion/buttonLong_brown_pressed.png"); transform: translateY(1px); }
+.btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.btn.square { padding: 0; width: 50px; height: 50px; border-image-source: url("/ui/kenney-ui-rpg-expansion/buttonSquare_brown.png"); font-size: 22px; }
+.btn.square:active { border-image-source: url("/ui/kenney-ui-rpg-expansion/buttonSquare_brown_pressed.png"); }
+
+.icon-btn {
+  position: absolute;
+  top: calc(10px + var(--safe-top));
+  right: calc(10px + var(--safe-right));
+}
+
+/* Settings panel */
+#settings {
+  position: absolute;
+  top: calc(66px + var(--safe-top));
+  right: calc(10px + var(--safe-right));
+  width: min(320px, calc(100vw - 20px));
+  display: none;
+}
+#settings.open { display: block; animation: pop-in 160ms ease-out; }
+#settings h2 { margin: 2px 0 10px; font: 700 18px/1.2 Georgia, serif; color: var(--wood); }
+.slider-row { display: grid; grid-template-columns: 86px 1fr 38px; align-items: center; gap: 8px; margin: 10px 0; font-size: 15px; }
+.slider-row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.slider-row input[type="range"] { width: 100%; height: 32px; accent-color: var(--wood); }
+.toggle-row { display: flex; justify-content: space-between; align-items: center; margin: 12px 0 6px; font-size: 15px; }
+.toggle-row input { width: 26px; height: 26px; accent-color: var(--wood); }
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #settings.open { animation: none; }
+}

@@ -1,5 +1,8 @@
 import Phaser from "phaser";
 import { DPR, canvasSize } from "./display";
+import "./ui/ui.css";
+import { mountSettings } from "./ui/settings";
+import { audio } from "./audio";
 import { UIScene } from "./scenes/UIScene";
 import { WorldScene } from "./scenes/WorldScene";
 
@@ -20,6 +23,9 @@ const game = new Phaser.Game({
   scene: [WorldScene, UIScene],
 });
 
+const uiRoot = document.getElementById("ui");
+if (uiRoot) mountSettings(uiRoot);
+
 window.addEventListener("resize", () => {
   const s = canvasSize();
   game.scale.resize(s.width, s.height);
@@ -27,5 +33,5 @@ window.addEventListener("resize", () => {
 
 // Development only: lets automated checks drive the game. Stripped from production builds.
 if (import.meta.env.DEV) {
-  (window as unknown as { __talesreachGame: Phaser.Game }).__talesreachGame = game;
+  Object.assign(window as object, { __talesreachGame: game, __talesreachAudio: audio });
 }

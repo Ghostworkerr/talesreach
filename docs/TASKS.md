@@ -25,7 +25,7 @@ reached, with simple step-by-step instructions written for a non-programmer on a
   characters move together; teleport test passes.
 
 ## Phase 1 — The living tavern
-- [ ] 1.1 Find and import music and sound (CC0/CC-BY): tavern theme, overworld day/night,
+- [x] 1.1 Find and import music and sound (CC0/CC-BY): tavern theme, overworld day/night,
       combat, UI clicks, coins, footsteps, fire, rain. Credit them. Build an audio manager
       with music/ambience/effects sliders and phone audio unlock.
 - [ ] 1.2 Tavern (Crossroads Inn) map in Tiled using the chosen pack; same map used for

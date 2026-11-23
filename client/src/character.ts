@@ -61,6 +61,8 @@ export class CharacterView {
     x: number,
     y: number,
     isMe: boolean,
+    /** Called on each footfall (used for footstep sounds). */
+    private readonly onStep?: () => void,
   ) {
     this.lastX = x;
     this.lastY = y;
@@ -114,6 +116,7 @@ export class CharacterView {
     // A foot just came down: kick up a little dust under it.
     if (half !== this.lastHalf) {
       this.dust(half === 0 ? 3 : -3);
+      this.onStep?.();
       this.lastHalf = half;
     }
 
