@@ -55,7 +55,7 @@ for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (isWater(x, y)) m.sol
 
 // Roads and the market square (dirt), with proper edges.
 const isSquare = (x, y) => x >= 58 && x <= 70 && y >= 76 && y <= 84;
-const roadMask = (x, y) => ROAD_X.includes(x) || ROAD_Y.includes(y) || isSquare(x, y) || (x >= 62 && x <= 65 && y >= 66 && y <= 74);
+const roadMask = (x, y) => ROAD_X.includes(x) || ROAD_Y.includes(y) || isSquare(x, y) || (x >= 51 && x <= 54 && y >= 63 && y <= 74);
 paintTerrain(m, (x, y) => roadMask(x, y) && !isWater(x, y), DIRT);
 
 // Farm fields (east): tilled dirt plots with crops, hedges between them.
@@ -116,17 +116,17 @@ function cottage(x0, y0) {
 }
 
 // The Crossroads Inn (exterior). Its door leads inside (the inn interior map).
-const inn = building(54, 52, 20, 9, { door: 9, windows: [2, 5, 13, 16] });
+const inn = building(44, 52, 18, 9, { door: 8, windows: [2, 5, 12, 15] });
 m.put("decor", inn.x - 1, inn.y, rpg(T.torch));
 m.put("decor", inn.x + 2, inn.y, rpg(T.torch));
 // The door tile itself is walkable so you can step into it (and inside).
 m.clear(inn.x, inn.y);
 m.clear(inn.x + 1, inn.y);
 m.put("decor", inn.x + 1, inn.y, rpg(T.door));
-// a short path from the door down to the road is part of roadMask (x 62..65, y 66..74)
+// a short path from the door down to the road is part of roadMask (x 51..54, y 64..74)
 
 // Cottages around the town, and a farmhouse.
-for (const [x, y] of [[47, 62], [79, 66], [51, 78], [74, 78], [97, 66]]) cottage(x, y);
+for (const [x, y] of [[45, 67], [79, 66], [51, 78], [74, 78], [97, 66]]) cottage(x, y);
 
 // Market stalls and a signpost at the crossroads.
 for (const [x, y, red] of [[59, 78, true], [62, 78, false], [66, 78, true], [69, 78, false]]) {

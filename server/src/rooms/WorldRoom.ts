@@ -1,5 +1,12 @@
 import { Room, ServerError, type Client, type Deferred } from "@colyseus/core";
+import { StateView } from "@colyseus/schema";
 import {
+  START_MAP,
+  VIEW_RANGE,
+  VIEW_RANGE_LEAVE,
+  WORLD_MAPS,
+  doorAt,
+  type GameMap,
   MAX_MESSAGES_PER_SECOND,
   MAX_QUEUED_INPUTS,
   applyInput,
@@ -11,8 +18,8 @@ import {
   type ClientMessageType,
   type PendingInput,
 } from "@talesreach/shared";
-import { PlayerState, WorldState } from "./WorldState.js";
-import { START_MAP, loadMap } from "../world/maps.js";
+import { NpcState, PlayerState, WorldState } from "./WorldState.js";
+import { loadMap } from "../world/maps.js";
 import { getAccountStore } from "../services.js";
 import type { Account } from "../db/store.js";
 import { storedAppearance } from "../http/accounts.js";
@@ -25,6 +32,9 @@ const RECONNECT_SECONDS = 30;
 
 /** Number of placeholder colours the client knows how to draw. */
 const COLOUR_COUNT = 8;
+
+/** Interest management runs every this many ticks (4 times a second). */
+const VIEW_EVERY_TICKS = 5;
 
 /**
  * The first region room. Clients send intentions; the server validates every
@@ -44,8 +54,11 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   /** Highest input sequence number received per player (old/repeated ones are ignored). */
   private readonly lastSeq = new Map<string, number>();
   private joinCounter = 0;
-  /** The map this room plays on: walls block movement; spawn points place new players. */
-  readonly map = loadMap(START_MAP);
+  /** Every map this room serves (the region outside and interiors). Walls block movement. */
+  readonly maps: Record<string, GameMap> = Object.fromEntries(WORLD_MAPS.map((name) => [name, loadMap(name)]));
+  /** The inn interior: where new characters arrive, the staff work and rooms are rented. */
+  readonly map = this.maps[START_MAP]!;
+  private tickCount = 0;
   /** Which session each account is playing in (one character per account at a time). */
   private readonly sessionsByAccount = new Map<string, string>();
   private readonly accountBySession = new Map<string, Account>();
@@ -59,6 +72,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   /** The inn: room rental, beds and chests. */
   private readonly inn = new Inn({
     map: this.map,
+    mapName: START_MAP,
     position: (sid) => this.state.players.get(sid),
     account: (sid) => this.accountBySession.get(sid),
     reject: (client, reason) => this.reject(client, reason),
@@ -71,6 +85,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.state = new WorldState();
     this.npcs = new Npcs({
       map: this.map,
+      mapName: START_MAP,
       state: this.state,
       position: (sid) => this.state.players.get(sid),
       account: (sid) => this.accountBySession.get(sid),
@@ -146,6 +161,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     // Wake in your rented bed, or arrive inside the Crossroads Inn at a spawn point.
     const spawns = this.map.points.filter((p) => p.type === "spawn");
     const spot = (await this.inn.wakePoint(account)) ?? spawns[(this.joinCounter - 1) % Math.max(1, spawns.length)];
+    player.map = START_MAP;
     player.x = spot?.x ?? this.map.pixelWidth / 2;
     player.y = spot?.y ?? this.map.pixelHeight / 2;
     player.pid = await this.social.add(client, account, player.name);
@@ -153,6 +169,9 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.queues.set(client.sessionId, []);
     this.lastSeq.set(client.sessionId, 0);
     this.state.playerCount = this.state.players.size;
+    this.refreshView(client, true);
+    // Everyone nearby sees the newcomer at once (not at the next view update).
+    for (const other of this.clients) if (other !== client) this.refreshView(other);
     await this.inn.sendWallet(client);
   }
 
@@ -170,6 +189,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   /** Back after a drop: same character, same place. Re-attach chat/party and resend private info. */
   override async onReconnect(client: Client) {
     this.social.rebind(client);
+    this.refreshView(client, true);
     await this.inn.sendWallet(client);
   }
 
@@ -190,11 +210,57 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.state.players.forEach((player, sessionId) => {
       const input = this.queues.get(sessionId)?.shift();
       if (!input) return;
-      const next = applyInput(player, input, this.map.grid);
+      const map = this.maps[player.map] ?? this.map;
+      const next = applyInput(player, input, map.grid);
       player.x = next.x;
       player.y = next.y;
       player.ack = input.seq;
+      // Stepped into a doorway: the server moves you to the other map (the client never picks).
+      const door = doorAt(map, player.x, player.y);
+      if (door) this.travel(sessionId, player, door.to, door.spot);
     });
+    this.tickCount += 1;
+    if (this.tickCount % VIEW_EVERY_TICKS === 0) for (const client of this.clients) this.refreshView(client);
+  }
+
+  /** Move a player to an arrival point on another map (through a door). */
+  private travel(sessionId: string, player: PlayerState, mapName: string, spotName: string) {
+    const target = this.maps[mapName];
+    const spot = target?.points.find((p) => p.name === spotName);
+    if (!target || !spot) return; // a broken door goes nowhere
+    player.map = mapName;
+    player.x = spot.x;
+    player.y = spot.y;
+    this.queues.set(sessionId, []); // inputs typed on the old map are dropped
+    const client = this.clients.find((c) => c.sessionId === sessionId);
+    if (client) {
+      client.send("travel", { map: mapName, x: spot.x, y: spot.y, ack: player.ack });
+      client.send("sound", { name: "doorOpen" });
+      // Same view object: the people left behind are removed from this client (a new view wouldn't).
+      this.refreshView(client);
+    }
+  }
+
+  /**
+   * Interest management: this client sees itself, plus players and NPCs on the
+   * same map within view range (they stay until a bit further, so nothing flickers).
+   */
+  private refreshView(client: Client, fresh = false) {
+    const me = this.state.players.get(client.sessionId);
+    if (!me) return;
+    if (fresh || !client.view) client.view = new StateView();
+    const view = client.view;
+    const sees = (o: { x: number; y: number; map: string }) => {
+      if (o.map !== me.map) return false;
+      const d = Math.hypot(o.x - me.x, o.y - me.y);
+      return view.has(o as never) ? d <= VIEW_RANGE_LEAVE : d <= VIEW_RANGE;
+    };
+    const apply = (o: PlayerState | NpcState, visible: boolean) => {
+      if (visible && !view.has(o)) view.add(o);
+      else if (!visible && view.has(o)) view.remove(o);
+    };
+    this.state.players.forEach((p) => apply(p, p === me || sees(p)));
+    this.state.npcs.forEach((n) => apply(n, sees(n)));
   }
 
   /** Register a handler that only ever sees messages that passed the shared Zod schema. */

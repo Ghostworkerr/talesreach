@@ -56,7 +56,7 @@ export const NPC_DEFS: NpcDef[] = [
     routines: [
       { from: 18, to: 2, activity: "performing", spots: ["bard_stage"], pause: [60, 120] },
       { from: 2, to: 9, activity: "sleeping", spots: ["bard_room"], pause: [60, 120] },
-      { from: 9, to: 18, activity: "wandering", spots: ["bard_garden_1", "bard_crossroads", "bard_garden_2", "bard_crossroads"], pause: [6, 14] },
+      { from: 9, to: 18, activity: "wandering", spots: ["bard_practice_1", "bard_practice_2", "bard_practice_3", "bard_practice_2"], pause: [6, 14] },
     ],
   },
 ];

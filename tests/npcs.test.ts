@@ -5,7 +5,7 @@ import { NPC_DEFS, NPC_SPEED, NpcBrain, routineAt } from "../server/src/world/np
 import { bardDialog, innkeeperDialog, serverDialog } from "../server/src/world/dialogue.js";
 import { worldTime } from "@talesreach/shared";
 
-const map = parseTiledMap(JSON.parse(readFileSync(new URL("../assets/maps/crossroads.tmj", import.meta.url), "utf8")));
+const map = parseTiledMap(JSON.parse(readFileSync(new URL("../assets/maps/inn.tmj", import.meta.url), "utf8")));
 const def = (id: string) => NPC_DEFS.find((d) => d.id === id)!;
 /** Server time at a given world hour (day 10). */
 const at = (hour: number) => WORLD_EPOCH_MS + 9 * WORLD_DAY_MS + (hour / 24) * WORLD_DAY_MS;
@@ -37,7 +37,7 @@ describe("NPC routines", () => {
     let seed = 7;
     const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const bard = new NpcBrain(def("bard"), map, rand);
-    // Midday: the bard heads out to the courtyard.
+    // Midday: the bard wanders the inn, practising in different corners.
     let prev = { x: bard.x, y: bard.y };
     let maxStep = 0;
     for (let i = 0; i < 20 * 120; i++) {
@@ -48,7 +48,8 @@ describe("NPC routines", () => {
     }
     expect(maxStep).toBeLessThanOrEqual(NPC_SPEED * 0.05 + 1e-6);
     expect(bard.activity).toBe("wandering");
-    expect(bard.y).toBeGreaterThan(17 * 16); // out of the inn, in the courtyard
+    const practice = ["bard_practice_1", "bard_practice_2", "bard_practice_3"].map((n) => map.points.find((p) => p.name === n)!);
+    expect(practice.some((p) => Math.hypot(p.x - bard.x, p.y - bard.y) < 40)).toBe(true); // at (or near) a practice spot
     // Evening: back on stage.
     for (let i = 0; i < 20 * 120; i++) bard.update(0.05, at(19) + i * 50);
     expect(bard.activity).toBe("performing");
@@ -101,9 +102,10 @@ describe("tipping the bard", () => {
     const sent: { type: string; msg: unknown }[] = [];
     const broadcasts: unknown[] = [];
     const rejected: string[] = [];
-    let myPos = { x: 0, y: 0 };
+    let myPos = { x: 0, y: 0, map: "inn" };
     const npcs = new Npcs({
       map,
+      mapName: "inn",
       state,
       position: () => myPos,
       account: () => account,
@@ -118,7 +120,7 @@ describe("tipping the bard", () => {
     await npcs.requestSong(client, { song: 1 });
     expect(rejected).toContain("too far");
     // Close, but she isn't performing.
-    myPos = { x: bard.x + 10, y: bard.y };
+    myPos = { x: bard.x + 10, y: bard.y, map: "inn" };
     bard.activity = "wandering";
     await npcs.requestSong(client, { song: 1 });
     expect(rejected).toContain("not performing");

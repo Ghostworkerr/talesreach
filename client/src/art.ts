@@ -13,10 +13,7 @@ export const SHEETS = {
   chars: { key: "chars", url: "art/kenney-roguelike-characters/roguelikeChar_transparent.png" },
 } as const;
 
-/** Tiled maps the client can show (same files the server uses for collision). */
-export const MAPS = {
-  crossroads: { key: "map:crossroads", url: "maps/crossroads.tmj" },
-} as const;
+/** Maps are streamed in chunks by worldMap.ts (files built by tools/maps/build-chunks.mjs). */
 
 export const RPG = {
   grass: 5,
@@ -37,5 +34,4 @@ export function loadArt(scene: Phaser.Scene) {
   for (const s of Object.values(SHEETS)) {
     scene.load.spritesheet(s.key, s.url, { frameWidth: TILE, frameHeight: TILE, spacing: 1 });
   }
-  for (const m of Object.values(MAPS)) scene.load.tilemapTiledJSON(m.key, m.url);
 }

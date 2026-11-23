@@ -35,7 +35,7 @@ const RECENT_LINES = 12;
 const INVITE_TTL_MS = 60_000;
 
 interface RoomHooks {
-  position(sessionId: string): { x: number; y: number } | undefined;
+  position(sessionId: string): { x: number; y: number; map: string } | undefined;
   reject(client: Client, reason: string): void;
 }
 
@@ -121,7 +121,7 @@ export class Social {
     const out: string[] = [];
     for (const sid of this.players.keys()) {
       const there = this.room.position(sid);
-      if (there && Math.hypot(there.x - here.x, there.y - here.y) <= LOCAL_CHAT_RANGE) out.push(sid);
+      if (there && there.map === here.map && Math.hypot(there.x - here.x, there.y - here.y) <= LOCAL_CHAT_RANGE) out.push(sid);
     }
     return out;
   }

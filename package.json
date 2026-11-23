@@ -22,7 +22,8 @@
     "typecheck": "npm run build --workspace shared && tsc -p server --noEmit && tsc -p client --noEmit && tsc -p tests --noEmit",
     "lint": "eslint .",
     "test": "npm run build --workspace shared && vitest run",
-    "check": "npm run lint && npm run typecheck && npm run test"
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "maps": "node tools/maps/build-inn.mjs && node tools/maps/build-region.mjs && node tools/maps/build-chunks.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -16,6 +16,8 @@ export interface LightSource {
   /** Flicker amount (0 = steady). */
   flicker: number;
   seed: number;
+  /** Which map chunk it came from (lights leave when the chunk unloads). */
+  chunk?: string;
 }
 
 const GRADIENT_KEY = "light:gradient";
@@ -36,7 +38,7 @@ export class Lighting {
 
   constructor(
     private readonly scene: Phaser.Scene,
-    private readonly lights: LightSource[],
+    private lights: LightSource[],
     depth: number,
   ) {
     if (!scene.textures.exists(GRADIENT_KEY)) {
@@ -89,6 +91,11 @@ export class Lighting {
     }
     if (player) draw(player.x, player.y - 4, 34, 0.55 * darkness);
     this.rt.render();
+  }
+
+  /** A new map: its own list of lights (kept up to date as chunks stream in). */
+  setLights(lights: LightSource[]) {
+    this.lights = lights;
   }
 
   destroy() {

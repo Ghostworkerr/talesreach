@@ -7,9 +7,11 @@ import { bardDialog, innkeeperDialog, serverDialog, type Dialog, type TalkContex
 import { NpcState, type WorldState } from "./WorldState.js";
 
 interface RoomHooks {
+  /** The map the NPCs live on (the inn) and its name. */
   map: GameMap;
+  mapName: string;
   state: WorldState;
-  position(sessionId: string): { x: number; y: number } | undefined;
+  position(sessionId: string): { x: number; y: number; map: string } | undefined;
   account(sessionId: string): Account | undefined;
   isRented(accountId: string): Promise<boolean>;
   reject(client: Client, reason: string): void;
@@ -28,7 +30,7 @@ export class Npcs {
       const brain = new NpcBrain(def, room.map);
       this.brains.set(def.id, brain);
       const s = new NpcState();
-      Object.assign(s, { name: def.name, title: def.title, frame: def.frame, x: brain.x, y: brain.y, activity: brain.activity });
+      Object.assign(s, { name: def.name, title: def.title, frame: def.frame, map: room.mapName, x: brain.x, y: brain.y, activity: brain.activity });
       room.state.npcs.set(def.id, s);
     }
   }
@@ -56,7 +58,7 @@ export class Npcs {
   private near(client: Client, id: string): NpcBrain | undefined {
     const npc = this.brains.get(id);
     const me = this.room.position(client.sessionId);
-    if (!npc || !me) return undefined;
+    if (!npc || !me || me.map !== this.room.mapName) return undefined;
     return Math.hypot(npc.x - me.x, npc.y - me.y) <= INTERACT_RANGE ? npc : undefined;
   }
 

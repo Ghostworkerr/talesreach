@@ -48,16 +48,13 @@ const put = (layer, x, y, gid, solid = false) => {
   L[layer][at(x, y)] = gid;
   if (solid) L.collision[at(x, y)] = rpg(T.wSide);
 };
-const solid = (x, y) => (L.collision[at(x, y)] = rpg(T.wSide));
-const clear = (x, y) => (L.collision[at(x, y)] = 0);
+const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+const solid = (x, y) => inside(x, y) && (L.collision[at(x, y)] = rpg(T.wSide));
+const clear = (x, y) => inside(x, y) && (L.collision[at(x, y)] = 0);
 
-// deterministic random so the map is the same every build
-let seed = 1337;
-const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
 
 // ---- outside the walls: darkness, and solid (only the doorway leads out) ----
 for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) solid(x, y);
-function tree() {}
 
 // ---- the inn ----
 const X0 = 4, X1 = 35, Y0 = 1, YB = 16; // outer wall-top box; YB = south wall-top row

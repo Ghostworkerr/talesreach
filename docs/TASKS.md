@@ -43,7 +43,7 @@ reached, with simple step-by-step instructions written for a non-programmer on a
 - **Gate:** 10 friends hang out 30 minutes on phones and PCs without bugs.
 
 ## Phase 2 — The adventure (public alpha)
-- [ ] 2.1 Chunk-streamed open world: town + forest + farmland + marsh edge; interiors as
+- [x] 2.1 Chunk-streamed open world: town + forest + farmland + marsh edge; interiors as
       instances with short fade.
 - [ ] 2.2 Weather system (server-owned) with rain/fog/storm visuals, sounds and gameplay effects.
 - [ ] 2.3 Combat core: stamina, attack combos, dodge, block/parry, telegraphs, damage types,

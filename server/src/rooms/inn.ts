@@ -10,8 +10,10 @@ export interface DialogOption {
 }
 
 interface RoomHooks {
+  /** The inn's own map (an interior) and its name. */
   map: GameMap;
-  position(sessionId: string): { x: number; y: number } | undefined;
+  mapName: string;
+  position(sessionId: string): { x: number; y: number; map: string } | undefined;
   account(sessionId: string): Account | undefined;
   reject(client: Client, reason: string): void;
   /** Where an NPC is right now (NPCs walk around). */
@@ -30,7 +32,7 @@ export class Inn {
   private near(client: Client, name: string, types: string[]): MapPoint | undefined {
     const p = this.room.map.points.find((pt) => pt.name === name && types.includes(pt.type));
     const me = this.room.position(client.sessionId);
-    if (!p || !me) return undefined;
+    if (!p || !me || me.map !== this.room.mapName) return undefined;
     return Math.hypot(p.x - me.x, p.y - me.y) <= INTERACT_RANGE ? p : undefined;
   }
 
@@ -38,7 +40,7 @@ export class Inn {
   private nearInnkeeper(client: Client): boolean {
     const keeper = this.room.npcPosition("innkeeper");
     const me = this.room.position(client.sessionId);
-    return !!keeper && !!me && Math.hypot(keeper.x - me.x, keeper.y - me.y) <= INTERACT_RANGE;
+    return !!keeper && !!me && me.map === this.room.mapName && Math.hypot(keeper.x - me.x, keeper.y - me.y) <= INTERACT_RANGE;
   }
 
   async isRented(accountId: string): Promise<boolean> {

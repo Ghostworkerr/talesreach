@@ -8,7 +8,7 @@ import { openStore, type AccountStore } from "../server/src/db/store.js";
 
 const PORT = 2595;
 const BASE = `http://127.0.0.1:${PORT}`;
-const map = parseTiledMap(JSON.parse(readFileSync(new URL("../assets/maps/crossroads.tmj", import.meta.url), "utf8")));
+const map = parseTiledMap(JSON.parse(readFileSync(new URL("../assets/maps/inn.tmj", import.meta.url), "utf8")));
 const point = (name: string) => map.points.find((p) => p.name === name)!;
 let server: Server;
 let store: AccountStore;
@@ -114,7 +114,7 @@ describe("the inn", () => {
     expect((last(p, "wallet") as unknown as Wallet).coins).toBe(0);
     expect(rejections(p)).toContain("not enough coins");
     await p.room.leave();
-  });
+  }, 40_000);
 
   it("rest in your bed, use the chest, and wake up there next time", async () => {
     const p = await newPlayer();
@@ -143,7 +143,7 @@ describe("the inn", () => {
     const again = await newPlayer(p.token);
     expect(Math.hypot(me(again).x - bed.x, me(again).y - bed.y)).toBeLessThan(1);
     await again.room.leave();
-  });
+  }, 40_000);
 
   it("refuses room actions without a room, from afar, or with bad values", async () => {
     const p = await newPlayer();

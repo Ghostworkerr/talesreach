@@ -34,7 +34,7 @@ export class Predictor {
 
   constructor(
     start: Vec2,
-    private readonly grid?: CollisionGrid,
+    private grid?: CollisionGrid,
   ) {
     this.position = { ...start };
   }
@@ -57,6 +57,18 @@ export class Predictor {
     const correction = { x: pos.x - this.position.x, y: pos.y - this.position.y };
     this.position = pos;
     return correction;
+  }
+
+  /**
+   * The server moved us (through a door) to `pos` on another map after input `ack`.
+   * Inputs sent after that still count: they are replayed on the new map.
+   */
+  teleport(pos: Vec2, ack: number, grid?: CollisionGrid): void {
+    this.grid = grid;
+    this.pending = this.pending.filter((i) => i.seq > ack);
+    let p: Vec2 = { ...pos };
+    for (const i of this.pending) p = applyInput(p, i, this.grid);
+    this.position = p;
   }
 
   get pendingCount(): number {

@@ -13,6 +13,8 @@ export interface MapPoint {
 
 export interface MapZone {
   name: string;
+  /** "zone" (an area: music, ambience, footsteps) or "door" (step in to go to another map). */
+  type: string;
   x: number;
   y: number;
   width: number;
@@ -87,7 +89,7 @@ export function parseTiledMap(json: unknown): GameMap {
       else if (o.width && o.height) {
         const props: MapZone["props"] = {};
         for (const p of o.properties ?? []) props[p.name] = p.value;
-        zones.push({ name, x: o.x, y: o.y, width: o.width, height: o.height, props });
+        zones.push({ name, type: type || "zone", x: o.x, y: o.y, width: o.width, height: o.height, props });
       }
     }
   }
@@ -124,7 +126,21 @@ export function feetBlocked(grid: CollisionGrid, x: number, y: number): boolean 
 }
 
 export function zoneAt(map: GameMap, x: number, y: number): MapZone | undefined {
-  return map.zones.find((z) => x >= z.x && x < z.x + z.width && y >= z.y && y < z.y + z.height);
+  return map.zones.find((z) => z.type !== "door" && x >= z.x && x < z.x + z.width && y >= z.y && y < z.y + z.height);
+}
+
+/** A door leads to another map: `to` is the map, `spot` the arrival point there. */
+export interface Door {
+  name: string;
+  to: string;
+  spot: string;
+}
+
+/** The door at a position, if the player is standing in one. */
+export function doorAt(map: GameMap, x: number, y: number): Door | undefined {
+  const z = map.zones.find((d) => d.type === "door" && x >= d.x && x < d.x + d.width && y >= d.y && y < d.y + d.height);
+  if (!z || typeof z.props.to !== "string" || typeof z.props.spot !== "string") return undefined;
+  return { name: z.name, to: z.props.to, spot: z.props.spot };
 }
 
 /**

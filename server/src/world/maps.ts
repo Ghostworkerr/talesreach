@@ -17,4 +17,4 @@ export function loadMap(name: string): GameMap {
   return map;
 }
 
-export const START_MAP = "crossroads";
+export { START_MAP } from "@talesreach/shared";

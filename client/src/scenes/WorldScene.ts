@@ -7,7 +7,7 @@ import {
   PLAYER_SPEED,
   Predictor,
   findPath,
-  parseTiledMap,
+  START_MAP,
   stepMovement,
   zoneAt,
   type Appearance,
@@ -26,10 +26,11 @@ import { playCutscene, type CutsceneStep } from "../ui/cutscene";
 import { ApiError } from "../account";
 import { SocialUI } from "../ui/social";
 import { DPR } from "../display";
-import { Lighting, type LightSource } from "../lighting";
+import { Lighting } from "../lighting";
+import { StreamedMap } from "../worldMap";
 import { Hud } from "../ui/hud";
 import { WORLD_ZOOM } from "../display";
-import { MAPS, SHEETS, loadArt } from "../art";
+import { SHEETS, loadArt } from "../art";
 import { dollKey, dollTexture } from "../doll";
 import type { UIScene } from "./UIScene";
 import { CharacterView, snap } from "../character";
@@ -92,18 +93,15 @@ const MAX_STEPS_PER_FRAME = 2;
 /** Draw order: map layers below characters, tree tops above, names on top of everything. */
 const DEPTH = { ground: 0, walls: 1, decor: 2, furniture: 3, above: 100_000, lighting: 150_000, labels: 200_000, marker: 2.5 } as const;
 
-/** Map tiles that give light at night (Kenney RPG sheet ids + 1 = gid): radius, strength, flicker. */
-const LIGHT_TILES: Record<number, { radius: number; strength: number; flicker: number }> = {
-  417: { radius: 56, strength: 1, flicker: 0.07 }, // wall torch
-  419: { radius: 26, strength: 0.85, flicker: 0.12 }, // candle
-  14: { radius: 78, strength: 1, flicker: 0.09 }, // hearth fire
-  476: { radius: 44, strength: 0.9, flicker: 0.05 }, // candelabra
-};
-
 export class WorldScene extends Phaser.Scene {
   private room: Room | null = null;
   private avatars = new Map<string, Avatar>();
   private map!: GameMap;
+  /** The map being shown, streamed in chunks around the camera. */
+  private world: StreamedMap | null = null;
+  private streamTimer = 0;
+  /** Going through a door: no input until the new map is ready. */
+  private travelling = false;
   /** Your own character: predicted locally, corrected by the server. */
   private predictor: Predictor | null = null;
   /** Visual offset that fades out so server corrections never look like a jump. */
@@ -144,42 +142,61 @@ export class WorldScene extends Phaser.Scene {
   }
 
   create() {
-    this.buildMap();
-    const cam = this.cameras.main;
-    cam.setBounds(0, 0, this.map.pixelWidth, this.map.pixelHeight);
-    cam.setZoom(WORLD_ZOOM);
-    const spawn = this.map.points.find((p) => p.type === "spawn");
-    cam.centerOn(spawn?.x ?? this.map.pixelWidth / 2, spawn?.y ?? this.map.pixelHeight / 2);
+    this.cameras.main.setZoom(WORLD_ZOOM);
     this.scene.launch("ui");
     // The UI scene starts on the next tick; hook its taps once it exists.
     this.events.once(Phaser.Scenes.Events.UPDATE, () => this.hookTaps());
-    void this.connect();
+    void this.start();
   }
 
-  /** Draw the Tiled map in layers; the server uses the same file for collision. */
-  private buildMap() {
-    const tm = this.make.tilemap({ key: MAPS.crossroads.key });
-    const sets = [tm.addTilesetImage("rpg", SHEETS.rpg.key), tm.addTilesetImage("indoor", SHEETS.indoor.key)].filter(
-      (t): t is Phaser.Tilemaps.Tileset => t !== null,
-    );
-    const layer = (name: string, depth: number) => tm.createLayer(name, sets, 0, 0)?.setDepth(depth);
-    layer("Ground", DEPTH.ground);
-    layer("Walls", DEPTH.walls);
-    layer("Decor", DEPTH.decor);
-    layer("Furniture", DEPTH.furniture);
-    layer("Above", DEPTH.above);
-    this.map = parseTiledMap(this.cache.tilemap.get(MAPS.crossroads.key).data);
-
-    // Lights: every torch, candle and hearth on the map.
-    const lights: LightSource[] = [];
-    for (const name of ["Walls", "Decor", "Furniture"]) {
-      tm.getLayer(name)?.tilemapLayer?.forEachTile((tile) => {
-        const l = LIGHT_TILES[tile.index];
-        if (l) lights.push({ x: tile.pixelX + 8, y: tile.pixelY + 8, ...l, seed: lights.length * 1.7 });
-      });
+  /** Show the inn (where everyone arrives), then sign in and join the world. */
+  private async start() {
+    const status = document.getElementById("status");
+    try {
+      await this.switchMap(START_MAP);
+    } catch {
+      if (status) status.textContent = "Couldn't load the map — check your connection and reload.";
+      return;
     }
-    this.lighting = new Lighting(this, lights, DEPTH.lighting);
+    const spawn = this.map.points.find((p) => p.type === "spawn");
+    this.cameras.main.centerOn(spawn?.x ?? this.map.pixelWidth / 2, spawn?.y ?? this.map.pixelHeight / 2);
+    await this.connect();
+  }
 
+  /** Show another map (a door, or the opening scene). Its chunks stream in around `around`. */
+  private async switchMap(name: string, around?: { x: number; y: number }) {
+    if (this.world?.name === name) return;
+    const next = await StreamedMap.load(this, name, DEPTH, around);
+    this.world?.destroy();
+    this.world = next;
+    this.map = next.map;
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, this.map.pixelWidth, this.map.pixelHeight);
+    if (this.lighting) this.lighting.setLights(next.lights);
+    else this.lighting = new Lighting(this, next.lights, DEPTH.lighting);
+    this.zone = undefined; // pick music for the new place
+    this.path = [];
+  }
+
+  /** The server moved us through a door: fade out, show the other map, fade in. */
+  private async travel(msg: { map: string; x: number; y: number; ack: number }) {
+    this.travelling = true;
+    this.path = [];
+    const cam = this.cameras.main;
+    await new Promise<void>((done) => {
+      cam.fadeOut(160, 0, 0, 0);
+      cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => done());
+    });
+    try {
+      await this.switchMap(msg.map, msg);
+    } finally {
+      this.predictor?.teleport({ x: msg.x, y: msg.y }, msg.ack, this.map.grid);
+      this.correction = { x: 0, y: 0 };
+      const me = this.room ? this.avatars.get(this.room.sessionId) : undefined;
+      if (me && this.predictor) me.view.root.setPosition(this.predictor.position.x, this.predictor.position.y);
+      cam.fadeIn(260, 0, 0, 0);
+      this.travelling = false;
+    }
   }
 
   private hookTaps() {
@@ -324,6 +341,7 @@ export class WorldScene extends Phaser.Scene {
       say("Welcome to the Crossroads Inn!", 5000);
       if (uiRoot) showHowToPlay(uiRoot);
       room.onMessage("pong", () => undefined);
+      room.onMessage("travel", (m: { map: string; x: number; y: number; ack: number }) => void this.travel(m));
       if (uiRoot) {
         const ui = this.scene.get("ui") as UIScene;
         this.social = new SocialUI(uiRoot, room, {
@@ -370,18 +388,38 @@ export class WorldScene extends Phaser.Scene {
   private async playOpening(root: HTMLElement) {
     const cam = this.cameras.main;
     const at = (tx: number, ty: number) => ({ x: tx * 16 + 8, y: ty * 16 + 8 });
-    const crossroads = at(20, 24);
+    // Outside first: the crossroads, then the inn's door; then step inside.
+    const crossroads = at(64, 78);
+    try {
+      await this.switchMap("crossroads", crossroads);
+    } catch {
+      return; // no map, no scene: go straight to the creator
+    }
     cam.centerOn(crossroads.x, crossroads.y);
+    audio.setMood("day");
     const steps: CutsceneStep[] = [
       { narrate: "All the roads of the realm meet at one place." },
-      { pan: at(20, 18), ms: 3500 },
+      { pan: at(56, 66), ms: 3500 },
       { narrate: "The Crossroads Inn — a warm fire, cold ale, and more stories than tables." },
-      { pan: at(20, 10), ms: 3000 },
+      { pan: at(53, 59), ms: 2500 },
+    ];
+    await playCutscene(root, steps, { pan: (x, y, ms) => cam.pan(x, y, ms, "Sine.easeInOut") });
+    // Through the door: fade, and you're inside.
+    await new Promise<void>((done) => {
+      cam.fadeOut(300, 0, 0, 0);
+      cam.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => done());
+    });
+    audio.play("doorOpen", { volume: 0.6 });
+    await this.switchMap(START_MAP).catch(() => undefined);
+    const hall = this.map.points.find((p) => p.name === "inn_entry") ?? at(19, 15);
+    cam.centerOn(hall.x, hall.y);
+    cam.fadeIn(400, 0, 0, 0);
+    audio.setMood("tavern");
+    await playCutscene(root, [
+      { pan: { x: hall.x, y: hall.y - 80 }, ms: 2500 },
       { narrate: "You arrive with a few coins, worn boots, and a name nobody here knows… yet." },
       { narrate: "So — who are you, traveller?" },
-    ];
-    audio.setMood("tavern");
-    await playCutscene(root, steps, { pan: (x, y, ms) => cam.pan(x, y, ms, "Sine.easeInOut") });
+    ], { pan: (x, y, ms) => cam.pan(x, y, ms, "Sine.easeInOut") });
   }
 
   /** Runs every time a server update arrives. */
@@ -404,7 +442,7 @@ export class WorldScene extends Phaser.Scene {
           this.cameras.main.startFollow(a.view.root, true, 1, 1);
         }
       }
-      if (isMe && this.predictor) {
+      if (isMe && this.predictor && !this.travelling) {
         const fix = this.predictor.reconcile({ x: p.x, y: p.y }, p.ack);
         this.correction.x -= fix.x;
         this.correction.y -= fix.y;
@@ -438,6 +476,12 @@ export class WorldScene extends Phaser.Scene {
   override update(_time: number, deltaMs: number) {
     const room = this.room;
     if (!room) return;
+    this.streamTimer -= deltaMs;
+    if (this.world && this.streamTimer <= 0) {
+      this.streamTimer = 250;
+      void this.world.stream(this.cameras.main.worldView);
+    }
+    if (this.travelling) return;
     this.stepInput(room, deltaMs);
     this.draw(room, deltaMs);
     this.updateZone();

@@ -19,3 +19,17 @@ export const MAX_MESSAGES_PER_SECOND = 30;
 
 /** Default port the game server listens on. */
 export const DEFAULT_SERVER_PORT = 2567;
+
+/** Interest management: a client receives players/NPCs within this many pixels (and on its map). */
+export const VIEW_RANGE = 420;
+/** ...and keeps them until they are this far away (no flicker at the edge). */
+export const VIEW_RANGE_LEAVE = 500;
+
+/** The open world is streamed to clients in square chunks of this many tiles. */
+export const CHUNK_TILES = 32;
+
+/** The map new characters start in (the Crossroads Inn, inside). */
+export const START_MAP = "inn";
+/** Maps the world room serves. */
+export const WORLD_MAPS = ["inn", "crossroads"] as const;
+export type WorldMapName = (typeof WORLD_MAPS)[number];

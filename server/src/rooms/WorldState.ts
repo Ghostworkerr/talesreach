@@ -1,4 +1,4 @@
-import { MapSchema, Schema, type } from "@colyseus/schema";
+import { MapSchema, Schema, type, view } from "@colyseus/schema";
 
 /** A player as every client sees it. Positions are decided by the server only. */
 export class PlayerState extends Schema {
@@ -14,6 +14,8 @@ export class PlayerState extends Schema {
   @type("uint8") hairColour = 0;
   @type("uint8") beard = 0;
   @type("uint8") hat = 0;
+  /** Which map the player is on ("inn", "crossroads"...). Changed only by the server (doors). */
+  @type("string") map = "";
   @type("float32") x = 0;
   @type("float32") y = 0;
   /** Last input sequence number the server applied (lets the owner's client reconcile). */
@@ -25,6 +27,7 @@ export class NpcState extends Schema {
   @type("string") name = "";
   @type("string") title = "";
   @type("uint16") frame = 0;
+  @type("string") map = "";
   @type("float32") x = 0;
   @type("float32") y = 0;
   /** What they're doing: working, serving, resting, performing, wandering, sleeping. */
@@ -36,8 +39,12 @@ export class WorldState extends Schema {
   @type("uint16") playerCount = 0;
   /** Server clock (epoch ms), refreshed every second: everyone shares one world time. */
   @type("float64") serverMs = Date.now();
-  @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
-  @type({ map: NpcState }) npcs = new MapSchema<NpcState>();
+  /**
+   * Interest management: each client only receives the players and NPCs on its own map
+   * and within view range (the server adds/removes them per client, see WorldRoom.updateViews).
+   */
+  @view() @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
+  @view() @type({ map: NpcState }) npcs = new MapSchema<NpcState>();
   /** The bard's current song (index into BARD_SONGS) and a counter that changes on each request. */
   @type("uint8") bardSong = 0;
   @type("uint16") bardSongSeq = 0;
