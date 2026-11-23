@@ -30,8 +30,8 @@ next. Updated after every task.
 | Polish: sharp + smooth + walk animation | done | paper-doll walk cycle |
 | 1.1 Music and sound | done | 6 CC0 tracks, 3 ambience loops, 24 Kenney effects; audio manager + settings panel |
 | 1.2 Tavern map | done | Tiled map built by tools/maps/build-crossroads.mjs; server collision; tap-to-move |
-| 1.3 Guest play + accounts | next | |
-| 1.4 Character creator | todo | |
+| 1.3 Guest play + accounts | done | age gate (under-13 blocked, minors flagged), guest accounts, save codes; Drizzle + Postgres (in-memory until DATABASE_URL) |
+| 1.4 Character creator | next | |
 | 1.5 Chat + safety | todo | |
 | 1.6 World clock + inn rooms | todo | |
 | 1.7 NPCs | todo | |
@@ -39,6 +39,11 @@ next. Updated after every task.
 | Phase 1 gate | waiting for owner | 10 friends, 30 min, phones + PCs |
 
 ## Waiting for the owner
+- **Database (so saves survive server restarts):** create a free Neon Postgres database and put its
+  connection string into Render as the `DATABASE_URL` environment variable (step-by-step instructions
+  are given in the chat when asked). Until then accounts live in memory; devices quietly re-register.
+- **Email login (optional, later):** needs an email-sending service account (e.g. Resend). Save codes
+  work without it.
 - Phase 1 gate playtest (after 1.8).
 
 ## Log
@@ -47,3 +52,4 @@ next. Updated after every task.
 - 2026-11-23: 1.1 done — music by mood with crossfades, ambience layers, footsteps, gear-button settings panel (music/ambience/effects/mute, saved per device). Audio total 5.5 MB, loaded on demand.
 - 2026-11-23: 1.2 done — Crossroads Inn + courtyard Tiled map (bar, hearth, tables, bard corner, 2 rentable rooms, crossroads outside). Server uses the same map for walls; tap/click-to-move with A* routes and a marker; music/ambience/footsteps change between inn and courtyard. 35 tests.
 - 2026-11-23: Repo now stores Unix line endings (.gitattributes).
+- 2026-11-23: 1.3 done — neutral date-of-birth screen before any account; under-13 refused (and remembered for a day on that device); 13–17 flagged minor; guest accounts with device tokens (hashed); save codes to play on other devices (rate-limited); one character per account at a time; silent re-registration if the server forgets. 46 tests.

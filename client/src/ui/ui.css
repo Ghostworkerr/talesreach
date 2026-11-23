@@ -56,6 +56,8 @@
   top: calc(66px + var(--safe-top));
   right: calc(10px + var(--safe-right));
   width: min(320px, calc(100vw - 20px));
+  max-height: calc(100vh - 80px - var(--safe-top) - var(--safe-bottom));
+  overflow-y: auto;
   display: none;
 }
 #settings.open { display: block; animation: pop-in 160ms ease-out; }
@@ -74,3 +76,49 @@
 @media (prefers-reduced-motion: reduce) {
   #settings.open { animation: none; }
 }
+
+/* Full-screen overlays (welcome / age screen, creator) */
+.overlay {
+  position: absolute;
+  inset: 0;
+  /* flex + margin:auto centres the panel but still lets a tall one scroll from its top */
+  display: flex;
+  padding: calc(12px + var(--safe-top)) calc(12px + var(--safe-right)) calc(12px + var(--safe-bottom)) calc(12px + var(--safe-left));
+  background: radial-gradient(ellipse at center, rgba(27, 22, 17, 0.55), rgba(27, 22, 17, 0.9));
+  pointer-events: auto;
+  overflow-y: auto;
+  animation: fade-in 220ms ease-out;
+}
+.overlay.leaving { opacity: 0; transition: opacity 240ms ease-in; }
+.overlay > * { margin: auto; }
+.gate { width: min(440px, 100%); }
+.gate h1 { margin: 4px 0 8px; font: 700 24px/1.2 Georgia, serif; color: var(--wood); }
+.gate p { margin: 8px 0; font-size: 15px; line-height: 1.45; }
+.gate .small { font-size: 13px; color: var(--ink-soft); }
+.gate .error { min-height: 1.2em; color: #8b2b1a; font-weight: 600; }
+.gate .btn { width: 100%; margin-top: 6px; }
+.gate .btn:disabled { opacity: 0.7; cursor: progress; }
+.dob { border: 0; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: 0.8fr 1.4fr 1fr; gap: 8px; }
+.dob legend { font-weight: 700; margin-bottom: 6px; color: var(--wood); }
+.dob label { display: grid; gap: 4px; font-size: 12px; color: var(--ink-soft); }
+.dob select, .field input {
+  font: 16px system-ui, sans-serif;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 2px solid #b08b5e;
+  border-radius: 6px;
+  background: #fbf3e2;
+  color: var(--ink);
+}
+.dob select:focus-visible, .field input:focus-visible { outline: 3px solid var(--wood); outline-offset: 1px; }
+
+/* Account section inside settings */
+#settings h3 { margin: 14px 0 6px; font: 700 15px/1.2 Georgia, serif; color: var(--wood); }
+#settings .account-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#settings .btn { min-height: 40px; padding: 0 12px; font-size: 14px; }
+#settings .code { font: 700 18px/1.4 ui-monospace, Consolas, monospace; letter-spacing: 1px; color: var(--ink); background: #fbf3e2; padding: 4px 8px; border-radius: 6px; user-select: all; }
+#settings .note { font-size: 12px; color: var(--ink-soft); margin: 6px 0; }
+.field { display: flex; gap: 6px; }
+.field input { flex: 1; min-width: 0; text-transform: uppercase; }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }

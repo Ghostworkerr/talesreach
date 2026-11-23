@@ -1,9 +1,10 @@
-import { Room, type Client } from "@colyseus/core";
+import { Room, ServerError, type Client } from "@colyseus/core";
 import {
   MAX_MESSAGES_PER_SECOND,
   MAX_QUEUED_INPUTS,
   applyInput,
   TICK_RATE,
+  ageGroup,
   parseClientMessage,
   type ClientMessage,
   type ClientMessageType,
@@ -11,6 +12,8 @@ import {
 } from "@talesreach/shared";
 import { PlayerState, WorldState } from "./WorldState.js";
 import { START_MAP, loadMap } from "../world/maps.js";
+import { getAccountStore } from "../services.js";
+import type { Account } from "../db/store.js";
 
 /** Number of placeholder colours the client knows how to draw. */
 const COLOUR_COUNT = 8;
@@ -35,6 +38,9 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   private joinCounter = 0;
   /** The map this room plays on: walls block movement; spawn points place new players. */
   readonly map = loadMap(START_MAP);
+  /** Which session each account is playing in (one character per account at a time). */
+  private readonly sessionsByAccount = new Map<string, string>();
+  private readonly accountBySession = new Map<string, Account>();
 
   override onCreate() {
     this.state = new WorldState();
@@ -60,10 +66,26 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     this.setSimulationInterval(() => this.tick(), 1000 / TICK_RATE);
   }
 
-  override onJoin(client: Client) {
+  /** Only players with a valid device token (from the account API) may enter. */
+  override async onAuth(_client: Client, options: unknown): Promise<Account> {
+    const token = (options as { token?: unknown } | null)?.token;
+    if (typeof token !== "string" || !/^[A-Za-z0-9_-]{20,100}$/.test(token)) throw new ServerError(401, "unknown_token");
+    const account = await getAccountStore().byToken(token);
+    if (!account) throw new ServerError(401, "unknown_token");
+    if (ageGroup(account.dob) === "child") throw new ServerError(403, "too_young");
+    return account;
+  }
+
+  override onJoin(client: Client, _options: unknown, account: Account) {
     this.joinCounter += 1;
+    // Same account joining again (another tab/device): the newer one wins.
+    const previous = this.sessionsByAccount.get(account.id);
+    if (previous) this.clients.find((c) => c.sessionId === previous)?.leave(4001, "signed in elsewhere");
+    this.sessionsByAccount.set(account.id, client.sessionId);
+    this.accountBySession.set(client.sessionId, account);
+    void getAccountStore().touch(account.id);
     const player = new PlayerState();
-    player.name = `Traveller ${this.joinCounter}`;
+    player.name = account.name || `Traveller ${this.joinCounter}`;
     player.colour = (this.joinCounter - 1) % COLOUR_COUNT;
     // Arrive inside the Crossroads Inn, at one of the map's spawn points.
     const spawns = this.map.points.filter((p) => p.type === "spawn");
@@ -77,6 +99,9 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   }
 
   override onLeave(client: Client) {
+    const account = this.accountBySession.get(client.sessionId);
+    this.accountBySession.delete(client.sessionId);
+    if (account && this.sessionsByAccount.get(account.id) === client.sessionId) this.sessionsByAccount.delete(account.id);
     this.state.players.delete(client.sessionId);
     this.queues.delete(client.sessionId);
     this.lastSeq.delete(client.sessionId);

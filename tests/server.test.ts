@@ -8,12 +8,17 @@ import {
   TICK_RATE,
   WORLD_ROOM,
 } from "@talesreach/shared";
+import type { Server } from "@colyseus/core";
 import { createGameServer } from "../server/src/app.js";
+import { openStore } from "../server/src/db/store.js";
 
 const PORT = 2599;
-const server = createGameServer();
+let server: Server;
 
 beforeAll(async () => {
+  const { store } = await openStore("");
+  // This file makes many test players quickly, so the per-IP limits are raised here.
+  server = createGameServer({ store, rateLimits: { general: 10_000, login: 10_000 } });
   await server.listen(PORT, "127.0.0.1");
 });
 
@@ -21,7 +26,16 @@ afterAll(async () => {
   await server.gracefullyShutdown(false);
 });
 
-const join = () => new Client(`ws://127.0.0.1:${PORT}`).joinOrCreate(WORLD_ROOM);
+/** Make a guest account (adult) and join the world with its token. */
+async function join() {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/guest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dob: "1990-05-17" }),
+  });
+  const { token } = (await res.json()) as { token: string };
+  return new Client(`ws://127.0.0.1:${PORT}`).joinOrCreate(WORLD_ROOM, { token });
+}
 
 function nextMessage<T = unknown>(room: Room, type: string, timeoutMs = 2000): Promise<T> {
   return new Promise((resolve, reject) => {

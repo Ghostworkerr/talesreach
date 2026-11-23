@@ -1,4 +1,5 @@
 import { audio, type AudioSettings } from "../audio";
+import { account, ApiError } from "../account";
 
 /** Gear button + settings panel (sound sliders). Built as HTML so it's sharp and accessible. */
 export function mountSettings(root: HTMLElement) {
@@ -66,6 +67,8 @@ export function mountSettings(root: HTMLElement) {
   render(audio.settings);
   audio.onChange(render);
 
+  panel.append(accountSection());
+
   const setOpen = (open: boolean) => {
     panel.classList.toggle("open", open);
     button.setAttribute("aria-expanded", String(open));
@@ -77,4 +80,51 @@ export function mountSettings(root: HTMLElement) {
   });
 
   root.append(button, panel);
+}
+
+/** "Your save": show a save code for other devices, or use one from another device. */
+function accountSection(): HTMLElement {
+  const box = document.createElement("section");
+  box.innerHTML = `
+    <h3>Your save</h3>
+    <div class="account-row"><button class="btn" type="button" data-act="code">Show my save code</button></div>
+    <div class="code-out" hidden>
+      <p class="code" aria-live="polite"></p>
+      <p class="note">Write this down and keep it secret. Use it to play this character on another device.
+      Showing it again makes a new code and the old one stops working.</p>
+    </div>
+    <h3>Play on this device with a save code</h3>
+    <div class="field">
+      <input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="14"
+        placeholder="ABCD-EFGH-JKMN" aria-label="Save code" />
+      <button class="btn" type="button" data-act="login">Use</button>
+    </div>
+    <p class="note" data-msg role="status"></p>`;
+  const msg = box.querySelector<HTMLElement>("[data-msg]")!;
+  const out = box.querySelector<HTMLElement>(".code-out")!;
+  box.querySelector<HTMLButtonElement>('[data-act="code"]')!.addEventListener("click", async () => {
+    try {
+      const code = await account.saveCode();
+      out.hidden = false;
+      out.querySelector(".code")!.textContent = code;
+      audio.play("page");
+    } catch {
+      msg.textContent = "Couldn't make a code right now. Try again in a moment.";
+      audio.play("error");
+    }
+  });
+  const input = box.querySelector<HTMLInputElement>('input[name="code"]')!;
+  box.querySelector<HTMLButtonElement>('[data-act="login"]')!.addEventListener("click", async () => {
+    try {
+      await account.loginWithCode(input.value);
+      msg.textContent = "Welcome back! Reloading…";
+      audio.play("confirm");
+      setTimeout(() => location.reload(), 600);
+    } catch (e) {
+      msg.textContent =
+        e instanceof ApiError && e.status === 429 ? "Too many tries. Please wait a minute." : "That code didn't work. Check it and try again.";
+      audio.play("error");
+    }
+  });
+  return box;
 }

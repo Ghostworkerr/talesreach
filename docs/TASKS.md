@@ -30,7 +30,7 @@ reached, with simple step-by-step instructions written for a non-programmer on a
       with music/ambience/effects sliders and phone audio unlock.
 - [x] 1.2 Tavern (Crossroads Inn) map in Tiled using the chosen pack; same map used for
       server collision. Virtual joystick + tap-to-move; WASD on PC.
-- [ ] 1.3 Guest play + account save (email magic link or managed auth). Date of birth at
+- [x] 1.3 Guest play + account save (email magic link or managed auth). Date of birth at
       sign-up; under-13 blocked; minor flag stored.
 - [ ] 1.4 Character creator (body, hair, colours, outfit from the pack).
 - [ ] 1.5 Local + party chat, profanity filter, contact-info filter for minors, mute,

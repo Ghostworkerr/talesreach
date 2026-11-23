@@ -14,7 +14,9 @@ import {
   type MapZone,
   type Vec2,
 } from "@talesreach/shared";
-import { joinWorld } from "../net";
+import { isAuthError, joinWorld, wakeServer } from "../net";
+import { account } from "../account";
+import { showAgeGate } from "../ui/ageGate";
 import { WORLD_ZOOM } from "../display";
 import { MAPS, READY_MADE_CHARACTERS, SHEETS, loadArt } from "../art";
 import type { UIScene } from "./UIScene";
@@ -151,11 +153,29 @@ export class WorldScene extends Phaser.Scene {
       const el = document.getElementById("status");
       if (el) el.textContent = text;
     };
-    say("The world is waking up…");
+    const uiRoot = document.getElementById("ui");
+    const waiting = (secs: number) =>
+      say(`The world is waking up… (${secs}s — the free server sleeps when nobody plays, this can take a minute)`);
     try {
-      const room = await joinWorld((secs) =>
-        say(`The world is waking up… (${secs}s — the free server sleeps when nobody plays, this can take a minute)`),
-      );
+      say("The world is waking up…");
+      await wakeServer(waiting);
+      let room: Room | null = null;
+      for (let attempt = 0; attempt < 3 && !room; attempt++) {
+        // First visit (or the account was lost): date of birth, then a guest account.
+        if (!account.token && uiRoot) {
+          say("");
+          await showAgeGate(uiRoot);
+        }
+        say("The world is waking up…");
+        try {
+          room = await joinWorld(account.token ?? "", waiting);
+        } catch (err) {
+          if (!isAuthError(err)) throw err;
+          // The server forgot this device (e.g. it restarted without a database): quietly re-register.
+          await account.recover();
+        }
+      }
+      if (!room) throw new Error("could not sign in");
       this.room = room;
       say("Welcome to the Crossroads Inn. Move with WASD / arrows, drag on the left, or tap where to go.");
       room.onMessage("pong", () => undefined);
