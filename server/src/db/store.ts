@@ -31,11 +31,28 @@ export function newSaveCode(): string {
   return out;
 }
 
+/** Everything the game needs from account storage. Two implementations below. */
+export interface AccountStore {
+  createGuest(dob: string): Promise<{ account: Account; token: string }>;
+  byToken(token: string): Promise<Account | undefined>;
+  rotateSaveCode(accountId: string): Promise<string>;
+  loginWithSaveCode(code: string): Promise<{ account: Account; token: string } | undefined>;
+  touch(accountId: string): Promise<void>;
+  block(accountId: string, blockedId: string): Promise<void>;
+  unblock(accountId: string, blockedId: string): Promise<void>;
+  blockedEitherWay(accountId: string): Promise<Set<string>>;
+  addReport(r: NewReport): Promise<Report>;
+  listReports(status: string, limit?: number): Promise<Report[]>;
+  setReportStatus(id: number, status: string): Promise<void>;
+  /** Save name + appearance. Returns false if another character already has that name. */
+  setProfile(accountId: string, name: string, appearance: string): Promise<boolean>;
+}
+
 /**
- * Player accounts. Works the same on real Postgres (DATABASE_URL) and on the
- * in-memory Postgres used for development and tests.
+ * Accounts in SQL (Drizzle): real Postgres when DATABASE_URL is set, or the
+ * in-memory PGlite Postgres used by the tests to check the SQL.
  */
-export class AccountStore {
+export class SqlAccountStore implements AccountStore {
   constructor(private readonly db: Db) {}
 
   async migrate() {
@@ -114,7 +131,6 @@ export class AccountStore {
     await this.db.update(reports).set({ status }).where(eq(reports.id, id));
   }
 
-  /** Save name + appearance. Returns false if another character already has that name. */
   async setProfile(accountId: string, name: string, appearance: string): Promise<boolean> {
     try {
       await this.db.update(accounts).set({ name, appearance }).where(eq(accounts.id, accountId));
@@ -144,24 +160,128 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * Open the account store: real Postgres when DATABASE_URL is set (Neon/Supabase),
- * otherwise an in-memory Postgres (fine for development; resets on restart).
+ * Accounts kept in plain memory: used when no database is connected. Very light
+ * (free hosting gives the whole server 512 MB), and resets when the server restarts.
+ * Behaves exactly like the SQL store (the same contract tests run against both).
  */
-export async function openStore(databaseUrl = process.env.DATABASE_URL): Promise<{ store: AccountStore; persistent: boolean }> {
-  let db: Db;
-  let persistent = false;
+export class MemoryAccountStore implements AccountStore {
+  private readonly accounts = new Map<string, Account>();
+  private readonly sessions = new Map<string, string>(); // token hash -> account id
+  private readonly blocks = new Set<string>(); // "a|b": a blocked b
+  private readonly reports: Report[] = [];
+  private nextReport = 1;
+
+  async createGuest(dob: string) {
+    const now = new Date();
+    const account: Account = { id: randomUUID(), dob, name: "", appearance: "{}", saveCodeHash: null, createdAt: now, lastSeenAt: now };
+    this.accounts.set(account.id, account);
+    const token = newToken();
+    this.sessions.set(sha256(token), account.id);
+    return { account: { ...account }, token };
+  }
+
+  async byToken(token: string) {
+    const id = this.sessions.get(sha256(token));
+    const a = id ? this.accounts.get(id) : undefined;
+    return a ? { ...a } : undefined;
+  }
+
+  async rotateSaveCode(accountId: string) {
+    const code = newSaveCode();
+    const a = this.accounts.get(accountId);
+    if (a) a.saveCodeHash = sha256(code);
+    return code;
+  }
+
+  async loginWithSaveCode(code: string) {
+    const hash = sha256(code);
+    const account = [...this.accounts.values()].find((a) => a.saveCodeHash === hash);
+    if (!account) return undefined;
+    const token = newToken();
+    this.sessions.set(sha256(token), account.id);
+    return { account: { ...account }, token };
+  }
+
+  async touch(accountId: string) {
+    const a = this.accounts.get(accountId);
+    if (a) a.lastSeenAt = new Date();
+  }
+
+  async block(accountId: string, blockedId: string) {
+    this.blocks.add(`${accountId}|${blockedId}`);
+  }
+
+  async unblock(accountId: string, blockedId: string) {
+    this.blocks.delete(`${accountId}|${blockedId}`);
+  }
+
+  async blockedEitherWay(accountId: string) {
+    const out = new Set<string>();
+    for (const pair of this.blocks) {
+      const [a, b] = pair.split("|") as [string, string];
+      if (a === accountId) out.add(b);
+      else if (b === accountId) out.add(a);
+    }
+    return out;
+  }
+
+  async addReport(r: NewReport) {
+    const row: Report = { ...r, id: this.nextReport++, evidence: JSON.stringify(r.evidence), status: "open", strikes: 0, createdAt: new Date() };
+    this.reports.push(row);
+    return { ...row };
+  }
+
+  async listReports(status: string, limit = 100) {
+    return this.reports
+      .filter((r) => r.status === status)
+      .sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime() || y.id - x.id)
+      .slice(0, limit)
+      .map((r) => ({ ...r }));
+  }
+
+  async setReportStatus(id: number, status: string) {
+    const r = this.reports.find((x) => x.id === id);
+    if (r) r.status = status;
+  }
+
+  async setProfile(accountId: string, name: string, appearance: string) {
+    const lower = name.toLowerCase();
+    // Same rule as the database's unique index: names are unique ignoring capitals.
+    for (const a of this.accounts.values()) if (a.id !== accountId && a.name !== "" && a.name.toLowerCase() === lower) return false;
+    const a = this.accounts.get(accountId);
+    if (a) Object.assign(a, { name, appearance });
+    return true;
+  }
+}
+
+/**
+ * Open the account store:
+ * - DATABASE_URL set: real Postgres (Neon/Supabase), saves survive restarts;
+ * - otherwise plain memory (light; resets when the server restarts);
+ * - `engine: "pglite"` (tests): an in-memory Postgres, to check the SQL itself.
+ */
+export async function openStore(
+  databaseUrl = process.env.DATABASE_URL,
+  opts: { engine?: "memory" | "pglite" } = {},
+): Promise<{ store: AccountStore; persistent: boolean }> {
   if (databaseUrl) {
     const { Pool } = await import("pg");
     const { drizzle } = await import("drizzle-orm/node-postgres");
-    const pool = new Pool({ connectionString: databaseUrl, max: 5, ssl: databaseUrl.includes("localhost") ? undefined : { rejectUnauthorized: false } });
-    db = drizzle(pool) as unknown as Db;
-    persistent = true;
-  } else {
+    const pool = new Pool({
+      connectionString: databaseUrl,
+      max: 5,
+      ssl: databaseUrl.includes("localhost") ? undefined : { rejectUnauthorized: false },
+    });
+    const store = new SqlAccountStore(drizzle(pool) as unknown as Db);
+    await store.migrate();
+    return { store, persistent: true };
+  }
+  if (opts.engine === "pglite") {
     const { PGlite } = await import("@electric-sql/pglite");
     const { drizzle } = await import("drizzle-orm/pglite");
-    db = drizzle(new PGlite()) as unknown as Db;
+    const store = new SqlAccountStore(drizzle(new PGlite()) as unknown as Db);
+    await store.migrate();
+    return { store, persistent: false };
   }
-  const store = new AccountStore(db);
-  await store.migrate();
-  return { store, persistent };
+  return { store: new MemoryAccountStore(), persistent: false };
 }
