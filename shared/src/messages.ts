@@ -16,9 +16,12 @@ export const PingMessage = z
 /**
  * "input": which way the player wants to walk, as a direction (each axis -1..1).
  * Never a position — the server works out where the player ends up.
+ * Each input moves the player for one server tick; `seq` counts up so the
+ * client can tell which inputs the server has already applied.
  */
 export const InputMessage = z
   .object({
+    seq: z.number().int().min(1).max(2 ** 31 - 1),
     x: z.number().min(-1).max(1),
     y: z.number().min(-1).max(1),
   })

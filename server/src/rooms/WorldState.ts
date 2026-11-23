@@ -6,6 +6,8 @@ export class PlayerState extends Schema {
   @type("uint8") colour = 0;
   @type("float32") x = 0;
   @type("float32") y = 0;
+  /** Last input sequence number the server applied (lets the owner's client reconcile). */
+  @type("uint32") ack = 0;
 }
 
 /** State the server shares with every client in the world room. */

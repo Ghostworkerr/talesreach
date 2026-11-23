@@ -1,14 +1,15 @@
 import { Room, type Client } from "@colyseus/core";
 import {
   MAX_MESSAGES_PER_SECOND,
+  MAX_QUEUED_INPUTS,
+  applyInput,
   TICK_RATE,
   WORLD_HEIGHT,
   WORLD_WIDTH,
   parseClientMessage,
-  stepMovement,
   type ClientMessage,
   type ClientMessageType,
-  type Vec2,
+  type PendingInput,
 } from "@talesreach/shared";
 import { PlayerState, WorldState } from "./WorldState.js";
 
@@ -24,8 +25,14 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   /** Built-in Colyseus guard: clients sending faster than this are disconnected. */
   override maxMessagesPerSecond = MAX_MESSAGES_PER_SECOND;
 
-  /** Latest walking direction per player (server memory only, never trusted as a position). */
-  private readonly moveDirs = new Map<string, Vec2>();
+  /**
+   * Inputs waiting to be applied, per player. One is applied per tick, so
+   * sending inputs faster than the tick rate can never make anyone faster;
+   * the queue is capped and extras are dropped.
+   */
+  private readonly queues = new Map<string, PendingInput[]>();
+  /** Highest input sequence number received per player (old/repeated ones are ignored). */
+  private readonly lastSeq = new Map<string, number>();
   private joinCounter = 0;
 
   override onCreate() {
@@ -36,7 +43,12 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     });
 
     this.handle("input", (client, msg) => {
-      this.moveDirs.set(client.sessionId, { x: msg.x, y: msg.y });
+      const queue = this.queues.get(client.sessionId);
+      if (!queue) return;
+      if (msg.seq <= (this.lastSeq.get(client.sessionId) ?? 0)) return this.reject(client, "old input");
+      this.lastSeq.set(client.sessionId, msg.seq);
+      if (queue.length >= MAX_QUEUED_INPUTS) return; // too fast: dropped
+      queue.push(msg);
     });
 
     // Any message type we don't know about is refused.
@@ -44,7 +56,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       this.reject(client, `unknown message type: ${String(type).slice(0, 32)}`);
     });
 
-    this.setSimulationInterval((dtMs) => this.tick(dtMs / 1000), 1000 / TICK_RATE);
+    this.setSimulationInterval(() => this.tick(), 1000 / TICK_RATE);
   }
 
   override onJoin(client: Client) {
@@ -56,24 +68,27 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     player.x = WORLD_WIDTH / 2 + (Math.random() - 0.5) * 96;
     player.y = WORLD_HEIGHT / 2 + (Math.random() - 0.5) * 96;
     this.state.players.set(client.sessionId, player);
-    this.moveDirs.set(client.sessionId, { x: 0, y: 0 });
+    this.queues.set(client.sessionId, []);
+    this.lastSeq.set(client.sessionId, 0);
     this.state.playerCount = this.state.players.size;
   }
 
   override onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
-    this.moveDirs.delete(client.sessionId);
+    this.queues.delete(client.sessionId);
+    this.lastSeq.delete(client.sessionId);
     this.state.playerCount = this.state.players.size;
   }
 
-  /** Advance the world by dt seconds. */
-  tick(dt: number) {
+  /** Advance the world one tick: apply at most one queued input per player. */
+  tick() {
     this.state.players.forEach((player, sessionId) => {
-      const dir = this.moveDirs.get(sessionId);
-      if (!dir || (dir.x === 0 && dir.y === 0)) return;
-      const next = stepMovement(player, dir, dt);
+      const input = this.queues.get(sessionId)?.shift();
+      if (!input) return;
+      const next = applyInput(player, input);
       player.x = next.x;
       player.y = next.y;
+      player.ack = input.seq;
     });
   }
 
