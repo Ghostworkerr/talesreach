@@ -199,3 +199,55 @@
   .creator .begin { width: auto; margin-top: 0; }
   .creator .error { margin: 2px 0 0; min-height: 1em; }
 }
+
+/* Chat */
+.chat-log {
+  position: absolute; left: calc(8px + var(--safe-left)); bottom: calc(30px + var(--safe-bottom));
+  width: min(420px, calc(100vw - 90px)); max-height: 34vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px; pointer-events: auto; cursor: pointer;
+  font-size: 13px; line-height: 1.35; scrollbar-width: none;
+}
+.chat-log::-webkit-scrollbar { display: none; }
+.chat-log .line { margin: 0; padding: 2px 8px; border-radius: 6px; background: rgba(27, 22, 17, 0.55); color: var(--light); text-shadow: 0 1px 0 #000; overflow-wrap: anywhere; animation: line-in 180ms ease-out; }
+.chat-log .line b { color: #ffe3a3; }
+.chat-log .line.party b { color: #9fe3c8; }
+.chat-log .line.system { color: #d8c8a6; font-style: italic; }
+.chat-log .line.old { display: none; }
+.chat-log.expanded { background: rgba(27, 22, 17, 0.6); border-radius: 8px; padding: 6px; }
+.chat-log.expanded .line.old { display: block; }
+.chat-btn { position: absolute; right: calc(10px + var(--safe-right)); bottom: calc(10px + var(--safe-bottom)); }
+.chat-bar {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(8px + var(--safe-bottom));
+  width: min(560px, calc(100vw - 80px)); display: none; gap: 6px; align-items: center; padding: 2px 4px;
+  border-width: 12px;
+}
+.chat-bar.open { display: flex; animation: pop-in 140ms ease-out; }
+.chat-bar input { flex: 1; min-width: 0; min-height: 40px; font: 16px system-ui, sans-serif; border: 2px solid #b08b5e; border-radius: 6px; padding: 0 8px; background: #fbf3e2; color: var(--ink); }
+.chat-bar.party input { border-color: #3f8f73; }
+.chat-bar .btn { min-height: 40px; padding: 0 12px; font-size: 14px; }
+.chat-bar .tabs { display: flex; gap: 2px; }
+.chat-bar .tabs button { min-height: 40px; padding: 0 8px; border: 2px solid #8a6542; border-radius: 6px; background: #fbf3e2; color: var(--wood); font: 600 13px system-ui, sans-serif; }
+.chat-bar .tabs button[aria-selected="true"] { background: var(--wood); color: var(--light); }
+.chat-bar .tabs button:disabled { opacity: 0.45; }
+
+/* Player menu, invite toast, party list, report form */
+.player-menu { position: absolute; width: 190px; display: grid; gap: 6px; padding: 2px 6px; border-width: 14px; animation: pop-in 140ms ease-out; }
+.player-menu h3 { margin: 0 0 2px; font: 700 15px/1.2 Georgia, serif; color: var(--wood); overflow-wrap: anywhere; }
+.player-menu .btn { min-height: 40px; font-size: 14px; }
+.btn.danger { border-image-source: url("/ui/kenney-ui-rpg-expansion/buttonLong_grey.png"); color: #fff3f0; }
+.invite { position: absolute; top: calc(70px + var(--safe-top)); left: 50%; transform: translateX(-50%); width: min(340px, calc(100vw - 24px)); border-width: 14px; padding: 0 6px; animation: pop-in 160ms ease-out; }
+.invite p { margin: 2px 0 8px; font-size: 15px; }
+.row { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.party-box { position: absolute; top: calc(10px + var(--safe-top)); left: calc(10px + var(--safe-left)); min-width: 140px; border-width: 12px; padding: 0 6px; font-size: 13px; }
+.party-box h3 { margin: 0 0 4px; font: 700 14px Georgia, serif; color: var(--wood); }
+.party-box ul { margin: 0 0 6px; padding-left: 16px; }
+.party-box .btn { min-height: 34px; font-size: 13px; padding: 0 10px; }
+.report { width: min(460px, 100%); }
+.report h1 { margin: 2px 0 6px; font: 700 20px Georgia, serif; color: var(--wood); }
+.report p { margin: 4px 0 8px; font-size: 14px; }
+.reasons { border: 0; padding: 0; margin: 0 0 8px; display: grid; gap: 4px; }
+.reasons label { display: flex; gap: 8px; align-items: center; min-height: 32px; font-size: 14px; }
+.reasons input { width: 20px; height: 20px; accent-color: var(--wood); }
+.report .note { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); margin-bottom: 8px; }
+.report textarea { font: 15px system-ui, sans-serif; border: 2px solid #b08b5e; border-radius: 6px; padding: 6px; background: #fbf3e2; resize: vertical; }
+@keyframes line-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

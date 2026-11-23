@@ -33,7 +33,7 @@ reached, with simple step-by-step instructions written for a non-programmer on a
 - [x] 1.3 Guest play + account save (email magic link or managed auth). Date of birth at
       sign-up; under-13 blocked; minor flag stored.
 - [x] 1.4 Character creator (body, hair, colours, outfit from the pack).
-- [ ] 1.5 Local + party chat, profanity filter, contact-info filter for minors, mute,
+- [x] 1.5 Local + party chat, profanity filter, contact-info filter for minors, mute,
       block, report → admin queue. Abuse tests.
 - [ ] 1.6 Server world clock: day/night (2 real hours) with lighting; inn rooms to rent
       (safe logout, storage chest, respawn).

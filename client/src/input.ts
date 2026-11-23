@@ -31,10 +31,11 @@ export class MoveInput {
   constructor(private readonly scene: Phaser.Scene) {
     const kb = scene.input.keyboard;
     this.keys = kb
-      ? (kb.addKeys({
-          w: "W", a: "A", s: "S", d: "D",
-          up: "UP", down: "DOWN", left: "LEFT", right: "RIGHT",
-        }) as MoveInput["keys"])
+      ? (kb.addKeys(
+          { w: "W", a: "A", s: "S", d: "D", up: "UP", down: "DOWN", left: "LEFT", right: "RIGHT" },
+          // Don't capture the keys: players must be able to type W/A/S/D in chat.
+          false,
+        ) as MoveInput["keys"])
       : null;
 
     this.base = scene.add.circle(0, 0, JOYSTICK_RADIUS, 0xffffff, 0.12).setStrokeStyle(2 * DPR, 0xffffff, 0.35);
@@ -54,11 +55,14 @@ export class MoveInput {
     return () => this.tapListeners.delete(fn);
   }
 
+  /** While typing in chat, movement keys are ignored. */
+  typing = false;
+
   /** Current direction, each axis in -1..1, length at most 1. */
   direction(): Vec2 {
     if (this.pointerId !== null) return this.stick;
     const k = this.keys;
-    if (!k) return { x: 0, y: 0 };
+    if (!k || this.typing) return { x: 0, y: 0 };
     let x = 0;
     let y = 0;
     if (k.a.isDown || k.left.isDown) x -= 1;

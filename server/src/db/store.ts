@@ -1,10 +1,14 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { SAVE_CODE_ALPHABET } from "@talesreach/shared";
-import { CREATE_TABLES, accounts, sessions } from "./schema.js";
+import { CREATE_TABLES, accounts, blocks, reports, sessions } from "./schema.js";
 
 export type Account = typeof accounts.$inferSelect;
+export type Report = typeof reports.$inferSelect;
+
+/** Public player id (shown to other players for mute/block/report/invite); never the account id. */
+export const publicId = (accountId: string) => createHash("sha256").update(`pid:${accountId}`).digest("hex").slice(0, 12);
 
 type Db = PgDatabase<PgQueryResultHKT, Record<string, never>>;
 
@@ -77,6 +81,39 @@ export class AccountStore {
     await this.db.update(accounts).set({ lastSeenAt: new Date() }).where(eq(accounts.id, accountId));
   }
 
+  async block(accountId: string, blockedId: string) {
+    await this.db.insert(blocks).values({ accountId, blockedId }).onConflictDoNothing();
+  }
+
+  async unblock(accountId: string, blockedId: string) {
+    await this.db.delete(blocks).where(and(eq(blocks.accountId, accountId), eq(blocks.blockedId, blockedId)));
+  }
+
+  /** Everyone this account has blocked, and everyone who has blocked it (blocking hides both ways). */
+  async blockedEitherWay(accountId: string): Promise<Set<string>> {
+    const rows = await this.db
+      .select({ a: blocks.accountId, b: blocks.blockedId })
+      .from(blocks)
+      .where(or(eq(blocks.accountId, accountId), eq(blocks.blockedId, accountId)));
+    return new Set(rows.map((r) => (r.a === accountId ? r.b : r.a)));
+  }
+
+  async addReport(r: NewReport) {
+    const [row] = await this.db
+      .insert(reports)
+      .values({ ...r, evidence: JSON.stringify(r.evidence) })
+      .returning();
+    return row!;
+  }
+
+  async listReports(status: string, limit = 100): Promise<Report[]> {
+    return this.db.select().from(reports).where(eq(reports.status, status)).orderBy(desc(reports.createdAt)).limit(limit);
+  }
+
+  async setReportStatus(id: number, status: string) {
+    await this.db.update(reports).set({ status }).where(eq(reports.id, id));
+  }
+
   /** Save name + appearance. Returns false if another character already has that name. */
   async setProfile(accountId: string, name: string, appearance: string): Promise<boolean> {
     try {
@@ -87,6 +124,15 @@ export class AccountStore {
       throw err;
     }
   }
+}
+
+export interface NewReport {
+  reporterId: string;
+  reportedId: string;
+  reportedName: string;
+  reason: string;
+  note: string;
+  evidence: unknown[];
 }
 
 /** Postgres "unique_violation" (23505), however the driver wraps it. */

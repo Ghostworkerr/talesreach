@@ -21,6 +21,8 @@ import { showAgeGate } from "../ui/ageGate";
 import { showCreator } from "../ui/creator";
 import { playCutscene, type CutsceneStep } from "../ui/cutscene";
 import { ApiError } from "../account";
+import { SocialUI } from "../ui/social";
+import { DPR } from "../display";
 import { WORLD_ZOOM } from "../display";
 import { MAPS, SHEETS, loadArt } from "../art";
 import { dollKey, dollTexture } from "../doll";
@@ -31,6 +33,7 @@ import { audio, type AmbienceLayer, type Mood, type Surface } from "../audio";
 /** Shape of the state the server sends (kept loose: the server owns it). */
 interface PlayerView extends Appearance {
   name: string;
+  pid: string;
   colour: number;
   x: number;
   y: number;
@@ -45,6 +48,10 @@ interface WorldView {
 
 interface Avatar {
   view: CharacterView;
+  pid: string;
+  name: string;
+  /** Speech bubble over the head, if they said something recently. */
+  bubble?: Phaser.GameObjects.Container;
   /** Which look the view is showing (players can change it later). */
   look: string;
   label: Phaser.GameObjects.Text;
@@ -75,6 +82,7 @@ export class WorldScene extends Phaser.Scene {
   private lastPathPos: Vec2 | null = null;
   private zone: MapZone | undefined;
   private surface: Surface = "wood";
+  private social: SocialUI | null = null;
 
   constructor() {
     super("world");
@@ -118,7 +126,64 @@ export class WorldScene extends Phaser.Scene {
       this.time.delayedCall(50, () => this.hookTaps());
       return;
     }
-    ui.moveInput.onTap((sx, sy) => this.walkTo(this.cameras.main.getWorldPoint(sx, sy)));
+    ui.moveInput.onTap((sx, sy) => {
+      const p = this.cameras.main.getWorldPoint(sx, sy);
+      // Tapped another player: open their menu instead of walking there.
+      const other = this.playerAt(p.x, p.y);
+      if (other && this.social) this.social.openPlayerMenu(other.pid, other.name, sx / DPR, sy / DPR);
+      else this.walkTo(p);
+    });
+  }
+
+  /** Another player's avatar under a world point (sprite area above their feet). */
+  private playerAt(x: number, y: number): Avatar | undefined {
+    const room = this.room;
+    if (!room) return undefined;
+    for (const [id, a] of this.avatars) {
+      if (id === room.sessionId) continue;
+      const fx = a.view.root.x;
+      const fy = a.view.root.y;
+      if (Math.abs(x - fx) <= 9 && y >= fy - 16 && y <= fy + 5) return a;
+    }
+    return undefined;
+  }
+
+  /** Show a speech bubble over a player's head (pops in, fades after a few seconds). */
+  private bubble(pid: string, text: string) {
+    const a = [...this.avatars.values()].find((v) => v.pid === pid);
+    if (!a) return;
+    a.bubble?.destroy();
+    const short = text.length > 60 ? `${text.slice(0, 57)}…` : text;
+    const label = this.add
+      .text(0, 0, short, {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: "9px",
+        color: "#3b2a1a",
+        wordWrap: { width: 110 },
+        align: "center",
+      })
+      .setOrigin(0.5, 1)
+      .setResolution(WORLD_ZOOM);
+    const w = label.width + 8;
+    const h = label.height + 4;
+    const bg = this.add.graphics();
+    bg.fillStyle(0xfbf3e2, 0.95).fillRoundedRect(-w / 2, -h - 2, w, h, 4);
+    bg.lineStyle(1, 0x8a6542, 1).strokeRoundedRect(-w / 2, -h - 2, w, h, 4);
+    bg.fillStyle(0xfbf3e2, 0.95).fillTriangle(-3, -2, 3, -2, 0, 2);
+    label.setPosition(0, -4);
+    const bubble = this.add.container(0, 0, [bg, label]).setDepth(DEPTH.labels + 1).setScale(0.4).setAlpha(0);
+    a.bubble = bubble;
+    this.tweens.add({ targets: bubble, scale: 1, alpha: 1, duration: 160, ease: "Back.easeOut" });
+    this.tweens.add({
+      targets: bubble,
+      alpha: 0,
+      delay: 4500 + Math.min(text.length * 40, 3000),
+      duration: 400,
+      onComplete: () => {
+        bubble.destroy();
+        if (a.bubble === bubble) a.bubble = undefined;
+      },
+    });
   }
 
   /** Tap-to-move: plan a route around walls and furniture, and show where we're going. */
@@ -192,7 +257,16 @@ export class WorldScene extends Phaser.Scene {
       this.room = room;
       say("Welcome to the Crossroads Inn. Move with WASD / arrows, drag on the left, or tap where to go.");
       room.onMessage("pong", () => undefined);
-      room.onMessage("rejected", () => undefined);
+      if (uiRoot) {
+        const ui = this.scene.get("ui") as UIScene;
+        this.social = new SocialUI(uiRoot, room, {
+          bubble: (pid, text) => this.bubble(pid, text),
+          isMe: (pid) => room.state?.players?.get(room.sessionId)?.pid === pid,
+          typing: (on) => {
+            if (ui.moveInput) ui.moveInput.typing = on;
+          },
+        });
+      }
       room.onStateChange(() => this.onServerUpdate(room));
       room.onLeave(() => {
         this.room = null;
@@ -270,6 +344,7 @@ export class WorldScene extends Phaser.Scene {
       if (seen.has(id)) continue;
       a.view.destroy();
       a.label.destroy();
+      a.bubble?.destroy();
       this.avatars.delete(id);
     }
   }
@@ -361,6 +436,7 @@ export class WorldScene extends Phaser.Scene {
       // Walk/idle animation, facing, depth and pixel snapping all happen in the view.
       a.view.update(pos.x, pos.y, deltaMs);
       a.label.setPosition(snap(pos.x), snap(pos.y - PLAYER_RADIUS - 6)).setDepth(DEPTH.labels);
+      a.bubble?.setPosition(snap(pos.x), snap(pos.y - PLAYER_RADIUS - 6 - a.label.height));
     }
   }
 
@@ -391,6 +467,6 @@ export class WorldScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setDepth(DEPTH.labels)
       .setResolution(WORLD_ZOOM);
-    return { view, look: dollKey(p), label, interp: new Interpolator(100) };
+    return { view, pid: p.pid, name: p.name, look: dollKey(p), label, interp: new Interpolator(100) };
   }
 }

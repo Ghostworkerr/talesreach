@@ -5,6 +5,7 @@ import { WorldRoom } from "./rooms/WorldRoom.js";
 import type { AccountStore } from "./db/store.js";
 import { setAccountStore } from "./services.js";
 import { accountRoutes, type RateLimits } from "./http/accounts.js";
+import { adminRoutes } from "./http/admin.js";
 
 export interface GameServerOptions {
   /** Where player accounts live (real Postgres in production, in-memory in dev/tests). */
@@ -30,6 +31,8 @@ export function createGameServer(opts: GameServerOptions): Server {
       app.get("/health", (_req, res) => {
         res.json({ ok: true, game: GAME_NAME });
       });
+      // Admin routes first, so the general account API never handles /api/admin.
+      adminRoutes(app);
       accountRoutes(app, opts.rateLimits);
     },
   });

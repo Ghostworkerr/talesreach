@@ -7,3 +7,4 @@ export * from "./map.js";
 export * from "./accounts.js";
 export * from "./appearance.js";
 export * from "./filter.js";
+export * from "./chat.js";

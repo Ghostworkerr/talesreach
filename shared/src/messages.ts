@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BlockMessage, ChatMessage, EmptyMessage, PartyInviteMessage, PartyRespondMessage, ReportMessage } from "./chat.js";
 
 /**
  * Every client→server message type has a Zod schema here.
@@ -30,6 +31,13 @@ export const InputMessage = z
 export const ClientMessageSchemas = {
   ping: PingMessage,
   input: InputMessage,
+  chat: ChatMessage,
+  block: BlockMessage,
+  unblock: BlockMessage,
+  report: ReportMessage,
+  partyInvite: PartyInviteMessage,
+  partyRespond: PartyRespondMessage,
+  partyLeave: EmptyMessage,
 } as const;
 
 export type ClientMessageType = keyof typeof ClientMessageSchemas;

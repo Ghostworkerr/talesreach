@@ -16,6 +16,7 @@ import { START_MAP, loadMap } from "../world/maps.js";
 import { getAccountStore } from "../services.js";
 import type { Account } from "../db/store.js";
 import { storedAppearance } from "../http/accounts.js";
+import { Social } from "./social.js";
 
 /** Number of placeholder colours the client knows how to draw. */
 const COLOUR_COUNT = 8;
@@ -43,6 +44,11 @@ export class WorldRoom extends Room<{ state: WorldState }> {
   /** Which session each account is playing in (one character per account at a time). */
   private readonly sessionsByAccount = new Map<string, string>();
   private readonly accountBySession = new Map<string, Account>();
+  /** Chat, parties, block and report. */
+  private readonly social = new Social({
+    position: (sid) => this.state.players.get(sid),
+    reject: (client, reason) => this.reject(client, reason),
+  });
 
   override onCreate() {
     this.state = new WorldState();
@@ -59,6 +65,14 @@ export class WorldRoom extends Room<{ state: WorldState }> {
       if (queue.length >= MAX_QUEUED_INPUTS) return; // too fast: dropped
       queue.push(msg);
     });
+
+    this.handle("chat", (client, msg) => this.social.chat(client, msg));
+    this.handle("block", (client, msg) => void this.social.block(client, msg));
+    this.handle("unblock", (client, msg) => void this.social.unblock(client, msg));
+    this.handle("report", (client, msg) => void this.social.report(client, msg));
+    this.handle("partyInvite", (client, msg) => this.social.partyInvite(client, msg));
+    this.handle("partyRespond", (client, msg) => this.social.partyRespond(client, msg));
+    this.handle("partyLeave", (client) => this.social.partyLeave(client));
 
     // Any message type we don't know about is refused.
     this.onMessage("*", (client, type) => {
@@ -78,7 +92,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     return account;
   }
 
-  override onJoin(client: Client, _options: unknown, account: Account) {
+  override async onJoin(client: Client, _options: unknown, account: Account) {
     this.joinCounter += 1;
     // Same account joining again (another tab/device): the newer one wins.
     const previous = this.sessionsByAccount.get(account.id);
@@ -95,6 +109,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     const spot = spawns[(this.joinCounter - 1) % Math.max(1, spawns.length)];
     player.x = spot?.x ?? this.map.pixelWidth / 2;
     player.y = spot?.y ?? this.map.pixelHeight / 2;
+    player.pid = await this.social.add(client, account, player.name);
     this.state.players.set(client.sessionId, player);
     this.queues.set(client.sessionId, []);
     this.lastSeq.set(client.sessionId, 0);
@@ -105,6 +120,7 @@ export class WorldRoom extends Room<{ state: WorldState }> {
     const account = this.accountBySession.get(client.sessionId);
     this.accountBySession.delete(client.sessionId);
     if (account && this.sessionsByAccount.get(account.id) === client.sessionId) this.sessionsByAccount.delete(account.id);
+    this.social.remove(client.sessionId);
     this.state.players.delete(client.sessionId);
     this.queues.delete(client.sessionId);
     this.lastSeq.delete(client.sessionId);

@@ -3,6 +3,8 @@ import { MapSchema, Schema, type } from "@colyseus/schema";
 /** A player as every client sees it. Positions are decided by the server only. */
 export class PlayerState extends Schema {
   @type("string") name = "";
+  /** Public player id (for mute/block/report/invite). Not the account id. */
+  @type("string") pid = "";
   @type("uint8") colour = 0;
   /** Appearance choices (see shared/appearance.ts); everyone sees your look. */
   @type("uint8") body = 0;
